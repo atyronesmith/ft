@@ -1,0 +1,118 @@
+# FineTune Training Configuration
+# This is the main configuration file for training
+
+# Model Configuration
+model:
+  name: "meta-llama/Llama-2-7b-hf"  # HuggingFace model ID or local path
+  quantization: "4bit"               # Options: none, 4bit, 8bit
+  device: "mps"                      # Options: mps (Apple Silicon), cuda, cpu
+  dtype: "float16"                   # Options: float32, float16, bfloat16
+  cache_dir: "~/Library/Application Support/FineTune/models"
+
+# Dataset Configuration
+dataset:
+  path: "data/training.jsonl"       # Path to training data
+  validation_path: null              # Optional: Path to validation data
+  test_size: 0.1                     # Fraction for validation if no validation_path
+  template: "alpaca"                 # Options: alpaca, chatml, llama, custom
+  max_length: 2048                   # Maximum sequence length
+  padding: "longest"                 # Options: longest, max_length
+  truncation: true
+  shuffle: true
+  seed: 42
+
+# Training Parameters
+training:
+  method: "lora"                     # Options: full, lora, qlora
+  output_dir: "./checkpoints"
+  num_epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-4
+  warmup_steps: 100
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  lr_scheduler: "cosine"             # Options: linear, cosine, constant
+  save_steps: 500
+  eval_steps: 500
+  logging_steps: 10
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "loss"
+  greater_is_better: false
+  fp16: true
+  gradient_checkpointing: true
+  optim: "adamw_torch"
+  seed: 42
+
+# LoRA Configuration (if method is lora/qlora)
+lora:
+  r: 16                              # LoRA rank
+  alpha: 32                          # LoRA alpha
+  dropout: 0.1                       # LoRA dropout
+  target_modules:                    # Modules to apply LoRA to
+    - "q_proj"
+    - "v_proj"
+    - "k_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"                       # Options: none, all, lora_only
+  task_type: "CAUSAL_LM"
+
+# Memory Management
+memory:
+  max_memory_gb: 64                  # Maximum memory to use
+  reserved_memory_gb: 8              # Memory to keep free
+  enable_gradient_checkpointing: true
+  enable_cpu_offload: false
+  enable_disk_offload: false
+
+# Monitoring and Logging
+logging:
+  level: "INFO"                      # Options: DEBUG, INFO, WARNING, ERROR
+  log_dir: "~/Library/Application Support/FineTune/logs"
+  tensorboard: true
+  tensorboard_dir: "./tensorboard"
+  wandb: false                       # Enable Weights & Biases logging
+  wandb_project: "finetune"
+  wandb_name: null                   # Auto-generated if null
+  report_to: ["tensorboard"]         # Options: tensorboard, wandb, none
+
+# Evaluation
+evaluation:
+  do_eval: true
+  eval_strategy: "steps"             # Options: steps, epoch, no
+  per_device_eval_batch_size: 8
+  eval_accumulation_steps: 1
+  eval_delay: 0
+  prediction_loss_only: false
+
+# Export Configuration
+export:
+  format: "pytorch"                  # Options: pytorch, gguf, onnx, coreml
+  quantization: null                 # Options: null, int8, int4
+  output_path: "./exported_model"
+
+# System Configuration
+system:
+  num_workers: 4                     # Number of data loading workers
+  use_mlx: true                      # Use MLX backend when available
+  fallback_to_pytorch: true          # Fallback to PyTorch if MLX fails
+  compile_model: false               # Use torch.compile (PyTorch 2.0+)
+  use_mps_device: true               # Use Metal Performance Shaders
+  dataloader_pin_memory: false       # Pin memory for DataLoader
+
+# Advanced Options
+advanced:
+  resume_from_checkpoint: null       # Path to resume training from
+  push_to_hub: false                 # Push model to HuggingFace Hub
+  hub_model_id: null                 # HuggingFace Hub model ID
+  hub_private: true                  # Make model private on Hub
+  gradient_accumulation_dtype: null  # Override dtype for gradients
+  auto_find_batch_size: false        # Automatically find optimal batch size
+  full_determinism: false            # Enable full determinism
+  torchdynamo: null                  # TorchDynamo backend
+  ray_scope: "last"                  # Ray scope for hyperparameter search
+  ddp_timeout: 1800                  # DDP timeout in seconds

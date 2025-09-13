@@ -1,0 +1,16 @@
+[virtualenvs]
+create = true
+in-project = true
+path = ".venv"
+
+[virtualenvs.options]
+always-copy = false
+no-pip = false
+no-setuptools = false
+
+[repositories]
+# Add custom repositories here if needed
+# [[tool.poetry.source]]
+# name = "private"
+# url = "https://private.pypi.org/simple/"
+# priority = "supplemental"

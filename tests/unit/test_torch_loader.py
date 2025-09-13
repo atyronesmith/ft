@@ -251,6 +251,8 @@ class TestPyTorchModelLoader:
         mock_hf_model = Mock()
         mock_param = Mock(numel=lambda: 1000, device="cpu")
         mock_hf_model.parameters = Mock(side_effect=lambda: iter([mock_param]))
+        # Mock the .to() method to return the same model with parameters
+        mock_hf_model.to.return_value = mock_hf_model
         mock_model.from_pretrained.return_value = mock_hf_model
         mock_tokenizer.from_pretrained.return_value = Mock()
 
@@ -280,7 +282,8 @@ class TestPyTorchModelLoader:
             }
         )
         mock_empty_model = Mock()
-        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu")]))
+        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)]))
+        mock_empty_model.to.return_value = mock_empty_model
         mock_model.from_pretrained.return_value = mock_empty_model
         mock_tokenizer.from_pretrained.return_value = Mock()
         mock_bnb.return_value = Mock()
@@ -313,7 +316,8 @@ class TestPyTorchModelLoader:
             }
         )
         mock_empty_model = Mock()
-        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu")]))
+        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)]))
+        mock_empty_model.to.return_value = mock_empty_model
         mock_model.from_pretrained.return_value = mock_empty_model
         mock_tokenizer.from_pretrained.return_value = Mock()
 

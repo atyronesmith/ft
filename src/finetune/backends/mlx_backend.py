@@ -129,7 +129,7 @@ class MLXBackend(Backend):
         info = {
             "backend": "mlx",
             "device": str(self.device),
-            "mlx_version": mlx.__version__ if MLX_AVAILABLE else None,
+            "mlx_version": getattr(mlx, "__version__", "unknown") if MLX_AVAILABLE else None,
             "platform": platform.platform(),
             "processor": platform.processor(),
         }

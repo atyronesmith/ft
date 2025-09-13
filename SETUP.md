@@ -1,111 +1,175 @@
 # FineTune Setup Guide
 
+## Current Status
+
+**✅ Phase 1 Complete**: Core infrastructure implemented
+- Model loading system with HuggingFace integration
+- MLX and PyTorch backends operational
+- 66 unit tests passing (53% coverage)
+- Comprehensive linting and formatting tools configured
+
 ## Prerequisites
 
-- macOS 12.0+ (Monterey or later) with Apple Silicon (M1/M2/M3/M4)
-- Python 3.11 or 3.12
-- At least 16GB RAM
-- 50GB+ free disk space for models
+### System Requirements
+- **macOS**: 12.0+ (Monterey or later) for MLX support
+- **Python**: 3.11 or higher (3.13 tested)
+- **Hardware**: Apple Silicon (M1/M2/M3/M4) recommended for MLX
+- **Memory**: 16GB+ RAM recommended
+- **Storage**: 10GB+ free space for models and dependencies
 
-## Quick Start
-
-### 1. Install Poetry (if not already installed)
-
+### Verify System
 ```bash
-curl -sSL https://install.python-poetry.org | python3 -
+# Check macOS version
+sw_vers
+
+# Check Python version
+python3 --version  # Should be 3.11+
+
+# Check if on Apple Silicon
+uname -m  # Should output 'arm64' for Apple Silicon
 ```
 
-Add Poetry to your PATH by adding this to your shell profile (`~/.zshrc` or `~/.bash_profile`):
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+## Installation Methods
 
-### 2. Clone the Repository
+### Method 1: Automated Setup (Recommended)
 
 ```bash
+# Clone the repository
 git clone https://github.com/yourusername/finetune.git
 cd finetune
+
+# Run the automated setup script
+./setup.sh
 ```
 
-### 3. Install Dependencies
+The script automatically:
+- Checks Python version compatibility
+- Creates virtual environment in `.venv/`
+- Installs all dependencies
+- Detects and installs MLX on Apple Silicon
+- Installs PyTorch with appropriate backend
+- Sets up development tools and pre-commit hooks
+- Runs tests to verify installation
 
-For basic installation:
+### Method 2: Manual Setup with venv
+
 ```bash
-make install
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate it
+source .venv/bin/activate
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install package in development mode
+pip install -e .
+
+# Install test dependencies
+pip install pytest pytest-mock pytest-cov loguru
+
+# Install MLX (Apple Silicon only)
+if [[ $(uname -m) == 'arm64' ]]; then
+    pip install mlx
+fi
+
+# Install PyTorch
+pip install torch torchvision torchaudio
+
+# Install HuggingFace ecosystem
+pip install transformers accelerate datasets tokenizers safetensors huggingface_hub
+
+# Install development tools
+pip install black ruff isort mypy pylint pre-commit
+
+# Install pre-commit hooks
+pre-commit install
 ```
 
-For development with all tools:
+### Method 3: Using Make Commands
+
 ```bash
+# The Makefile assumes .venv exists
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install everything
 make dev
+
+# Or step by step
+make install      # Core package
+make test         # Run tests
+make lint         # Run linters
 ```
 
-For full installation with all optional features:
+## Verify Installation
+
+### 1. Run Tests
 ```bash
-make install-all
+# Using Make
+make test
+
+# Or directly
+PYTHONPATH=src .venv/bin/python -m pytest tests/unit/ -v
 ```
 
-### 4. Verify Installation
+Expected output:
+- **66+ tests passing**
+- **53%+ code coverage**
+- No import errors
 
+### 2. Check Imports
 ```bash
-make info
+# Test core functionality
+python -c "from finetune.models.manager import ModelManager; print('✅ Core imports working')"
+
+# Check backends
+python -c "import mlx; print('✅ MLX available')" 2>/dev/null || echo "⚠️  MLX not available"
+python -c "import torch; print('✅ PyTorch available')"
+python -c "import transformers; print('✅ Transformers available')"
 ```
 
-This will show your system information and available backends.
+### 3. Test Model Loading
+```python
+from finetune.models.manager import ModelManager
+from finetune.backends.device import device_manager
 
-## Poetry Commands
+# Check selected backend
+backend = device_manager.get_optimal_backend()
+print(f"Selected backend: {backend.name}")
+# Should be 'mlx' on Apple Silicon, 'pytorch' elsewhere
 
-Poetry automatically manages a virtual environment for the project. The virtual environment is created in `.venv/` within the project directory.
-
-### Basic Commands
-
-```bash
-# Enter the virtual environment shell
-poetry shell
-
-# Run a command in the virtual environment
-poetry run ft --help
-
-# Install dependencies
-poetry install
-
-# Add a new dependency
-poetry add package-name
-
-# Add a development dependency
-poetry add --group dev package-name
-
-# Update all dependencies
-poetry update
-
-# Show installed packages
-poetry show
-```
-
-### Managing Extras
-
-The project has several optional dependency groups:
-
-- `ui` - Streamlit web interface
-- `monitoring` - Weights & Biases, advanced plotting
-- `config` - Hydra configuration framework
-- `db` - Database migrations with Alembic
-- `quantization` - Bitsandbytes for model quantization
-
-Install specific extras:
-```bash
-# Install with UI support
-poetry install -E ui
-
-# Install with all extras
-poetry install --all-extras
+# Initialize manager
+manager = ModelManager()
+models = manager.list_models()
+print(f"Found {len(models)} cached models")
 ```
 
 ## Configuration
 
-### 1. Training Configuration
+### Environment Variables
 
-Edit `train.yml` to configure your training parameters:
+Create a `.env` file:
+```bash
+cp .env.example .env
+```
 
+Edit `.env`:
+```bash
+# HuggingFace token for private models
+HUGGINGFACE_TOKEN=your_token_here
+
+# Cache directory (default: ~/.cache/finetune)
+FINETUNE_HOME=/path/to/cache
+
+# Logging level
+FINETUNE_LOG_LEVEL=INFO
+```
+
+### Training Configuration
+
+Edit `train.yml` for training parameters:
 ```yaml
 model:
   name: "meta-llama/Llama-2-7b-hf"
@@ -116,129 +180,218 @@ training:
   batch_size: 4
   learning_rate: 2e-4
   num_epochs: 3
-```
-
-### 2. Secrets Configuration
-
-Copy the example passwords file and add your credentials:
-
-```bash
-cp passwords.yml.example passwords.yml
-```
-
-Edit `passwords.yml` with your API keys:
-```yaml
-huggingface:
-  token: "your-token-here"
-```
-
-**Important:** `passwords.yml` is gitignored and should never be committed.
-
-## Environment Variables
-
-You can also use environment variables instead of `passwords.yml`:
-
-```bash
-export HUGGINGFACE_TOKEN="your-token-here"
-export WANDB_API_KEY="your-wandb-key"
-```
-
-## Troubleshooting
-
-### Poetry Not Found
-
-If `make` commands fail with "Poetry not found":
-1. Ensure Poetry is installed: `curl -sSL https://install.python-poetry.org | python3 -`
-2. Add to PATH: `export PATH="$HOME/.local/bin:$PATH"`
-3. Restart your terminal
-
-### MLX Installation Issues
-
-MLX is only available on Apple Silicon Macs. If you're on Intel Mac or Linux:
-- The system will automatically fall back to PyTorch
-- MLX will be skipped during installation
-
-### Memory Issues
-
-If you encounter out-of-memory errors:
-1. Reduce batch size in `train.yml`
-2. Enable gradient checkpointing
-3. Use stronger quantization (4-bit instead of 8-bit)
-
-### Virtual Environment Issues
-
-Poetry creates the virtual environment automatically. If you have issues:
-
-```bash
-# Remove existing virtual environment
-rm -rf .venv
-
-# Recreate it
-poetry install
+  
+lora:
+  r: 16
+  alpha: 32
+  target_modules: ["q_proj", "v_proj"]
 ```
 
 ## Development Workflow
 
-### 1. Always Use Virtual Environment
-
-Poetry ensures you're always in the virtual environment when using `poetry run` or `poetry shell`.
-
-### 2. Running Commands
+### Daily Development
 
 ```bash
-# Option 1: Use poetry run prefix
-poetry run ft train
-poetry run pytest
+# 1. Activate environment
+source .venv/bin/activate
 
-# Option 2: Enter shell first
-poetry shell
-ft train
-pytest
-```
-
-### 3. Updating Dependencies
-
-When pulling new changes:
-```bash
+# 2. Pull latest changes
 git pull
-poetry install  # This syncs your environment with poetry.lock
+
+# 3. Update dependencies if needed
+pip install -e .
+
+# 4. Run tests before starting
+make test
+
+# 5. Make your changes...
+
+# 6. Format code
+make format  # or: black src/ tests/
+
+# 7. Run linters
+make lint    # or: ruff check src/ tests/
+
+# 8. Run tests
+make test
+
+# 9. Commit (pre-commit hooks will run)
+git commit -m "Your message"
 ```
 
-### 4. Adding New Dependencies
+### Available Make Commands
 
 ```bash
-# Add to main dependencies
-poetry add numpy
-
-# Add to dev dependencies
-poetry add --group dev pytest-benchmark
-
-# Add optional dependency
-poetry add --optional wandb
+make help          # Show all available commands
+make dev           # Install all dev dependencies
+make test          # Run unit tests only
+make test-integration  # Run integration tests
+make test-all      # Run all tests with coverage
+make format        # Format code with black
+make lint          # Run ruff and pylint
+make clean         # Clean cache and temp files
 ```
+
+## Project Structure
+
+```
+ft/
+├── src/finetune/         # Main package
+│   ├── models/          # Model implementations
+│   │   ├── base.py     # Abstract base classes
+│   │   ├── manager.py  # Model manager
+│   │   ├── mlx_models.py    # MLX implementations
+│   │   ├── mlx_loader.py    # MLX model loader
+│   │   └── torch_loader.py  # PyTorch loader
+│   ├── backends/        # Backend abstraction
+│   │   ├── device.py   # Device management
+│   │   ├── mlx_backend.py   # MLX backend
+│   │   └── torch_backend.py # PyTorch backend
+│   ├── core/           # Core utilities
+│   │   ├── config.py   # Configuration
+│   │   └── registry.py # Model registry
+│   └── cli/            # CLI (in development)
+├── tests/              # Test suite
+│   ├── unit/          # Unit tests (66 passing)
+│   └── integration/   # Integration tests
+├── docs/              # Documentation
+│   └── design/       # Architecture docs
+└── scripts/          # Utility scripts
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Virtual Environment Not Activated
+```bash
+# Check if in venv
+which python  # Should show .venv/bin/python
+
+# Activate if needed
+source .venv/bin/activate
+```
+
+#### Import Errors
+```bash
+# Ensure PYTHONPATH includes src
+export PYTHONPATH=src:$PYTHONPATH
+
+# Or reinstall package
+pip install -e .
+```
+
+#### MLX Not Available
+```bash
+# Only works on Apple Silicon
+uname -m  # Must output 'arm64'
+
+# Install MLX
+pip install mlx
+
+# Verify
+python -c "import mlx; print('MLX version:', mlx.__version__)"
+```
+
+#### Test Failures
+```bash
+# Clear cache
+pytest --cache-clear
+
+# Run with verbose output
+pytest -xvs tests/unit/
+
+# Run specific test
+pytest tests/unit/test_mlx_models.py -k test_llama_model_creation
+```
+
+#### Pre-commit Hook Issues
+```bash
+# Skip hooks temporarily
+git commit --no-verify -m "message"
+
+# Reinstall hooks
+pre-commit uninstall
+pre-commit install
+
+# Run manually
+pre-commit run --all-files
+```
+
+#### Memory Issues
+- Reduce batch size in configuration
+- Use stronger quantization (4-bit instead of 8-bit)
+- Close other applications
 
 ## IDE Setup
 
 ### VS Code
 
-1. Install Python extension
-2. Select interpreter: `Cmd+Shift+P` → "Python: Select Interpreter" → Choose `.venv/bin/python`
+Create `.vscode/settings.json`:
+```json
+{
+    "python.defaultInterpreter": "${workspaceFolder}/.venv/bin/python",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.formatting.provider": "black",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
+    "editor.formatOnSave": true,
+    "editor.rulers": [100]
+}
+```
 
 ### PyCharm
-
-1. Settings → Project → Python Interpreter
-2. Select "Poetry Environment"
-3. PyCharm will automatically detect `.venv/`
+1. File → Settings → Project → Python Interpreter
+2. Select `.venv/bin/python` as interpreter
+3. Enable pytest as test runner
+4. Set black as formatter
 
 ## Next Steps
 
-1. Initialize a project: `poetry run ft init`
-2. Download a model: `poetry run ft models pull gpt2`
-3. Prepare your dataset: `poetry run ft dataset prepare data/training.jsonl`
-4. Start training: `poetry run ft train`
+After successful setup:
+
+1. **Explore the codebase**
+   ```bash
+   # View model implementations
+   ls src/finetune/models/
+   
+   # Run specific tests to understand functionality
+   pytest tests/unit/test_mlx_models.py -v
+   ```
+
+2. **Try loading a model**
+   ```python
+   from finetune.models.manager import ModelManager
+   
+   manager = ModelManager()
+   # Small model for testing
+   model = manager.load_model("gpt2")
+   ```
+
+3. **Read documentation**
+   - Architecture: `docs/design/MLX_ARCHITECTURE.md`
+   - Integration: `docs/design/MLX_INTEGRATION.md`
+
+4. **Check test coverage**
+   ```bash
+   pytest --cov=finetune --cov-report=html tests/
+   open htmlcov/index.html
+   ```
 
 ## Getting Help
 
-- Run `poetry run ft --help` for CLI documentation
-- Check `docs/` for detailed guides
-- Report issues at: https://github.com/yourusername/finetune/issues
+- **README**: Main documentation with examples
+- **Architecture Docs**: `/docs/design/` folder
+- **Test Examples**: `/tests/unit/` for usage patterns
+- **Issues**: Report bugs or ask questions on GitHub
+
+## Current Limitations
+
+As of Phase 1 completion:
+- ✅ Model loading and conversion working
+- ✅ Backend abstraction complete
+- ⚠️ Training loops not yet implemented (Phase 2)
+- ⚠️ CLI commands partial (Phase 2)
+- ⚠️ Web UI not yet available (Phase 3)
+- ⚠️ REST API not yet available (Phase 3)

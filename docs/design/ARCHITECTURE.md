@@ -1,32 +1,34 @@
 # Fine-Tuning Application Architecture
 
-**Last Updated**: September 2025  
-**Status**: ✅ Phase 1 Complete (106 tests, full CLI), 🚧 Phase 2 Ready to Start
+**Last Updated**: September 2025
+**Status**: ✅ Phase 1 Complete (106 tests passing), 🚧 Phase 2 In Progress (LoRA Implementation)
 
 ## System Overview
 A modular, extensible fine-tuning platform leveraging Apple Silicon optimization for efficient local model training.
 
 ## Core Architecture Components
 
-### 1. Model Layer
-- **Model Hub Interface**: Direct integration with HuggingFace Hub API for model discovery and download
-- **Model Registry**: Local SQLite database tracking downloaded models, configurations, and training history
-- **Adapter System**: Support for LoRA, QLoRA, and full fine-tuning with automatic memory optimization
-- **Quantization Engine**: 4-bit and 8-bit quantization using bitsandbytes or GGML for M4 optimization
+### 1. Model Layer ✅ IMPLEMENTED
+- **Model Manager**: Unified interface for all model operations with automatic backend selection
+- **MLX Native Models**: Direct MLX implementations (Llama, Mistral, GPT-2) with optimal Apple Silicon performance
+- **PyTorch Fallback**: Seamless fallback to PyTorch MPS/CUDA when MLX unavailable
+- **Weight Conversion**: Automated PyTorch → MLX conversion pipeline with validation
+- **Model Loading**: Support for sharded models, safetensors, and HuggingFace Hub integration
 
-### 2. Data Pipeline
+### 2. Data Pipeline 🚧 PHASE 2
 - **Format Handlers**: Pluggable parsers for JSON, JSONL, CSV, Parquet, and custom formats
 - **Template Engine**: Configurable prompt templates (Alpaca, ChatML, Llama, custom)
 - **Preprocessing Pipeline**: Token analysis, sequence length optimization, data validation
 - **Dataset Cache**: LRU cache with memory-mapped storage for efficient data loading
 
-### 3. Training Infrastructure
-- **Training Orchestrator**: Manages training loops, checkpointing, and resource allocation
-- **Memory Manager**: Dynamic batch sizing based on available unified memory
-- **MLX Backend**: Primary training backend optimized for Apple Silicon
-- **PyTorch Fallback**: Secondary backend with MPS acceleration for unsupported operations
+### 3. Training Infrastructure 🚧 PHASE 2
+- **Backend Selection**: Intelligent MLX/PyTorch selection with device detection (✅ COMPLETE)
+- **Memory Management**: Unified memory monitoring and automatic batch sizing (✅ COMPLETE)
+- **MLX Backend**: Primary training backend optimized for Apple Silicon (✅ COMPLETE)
+- **PyTorch Fallback**: Secondary backend with MPS acceleration (✅ COMPLETE)
+- **Training Loops**: LoRA/QLoRA implementations with checkpointing (🚧 IN PROGRESS)
 
-### 4. Configuration Management
+### 4. Configuration Management 🚧 PHASE 2
 - **Primary Config**: Single `train.yml` file for all training parameters
 - **Secrets Management**: Separate `passwords.yml` for API keys and tokens
 - **Profile System**: Predefined profiles for common scenarios (chat, instruction, code, domain-specific)
@@ -214,17 +216,19 @@ POST /api/inference/generate
 
 ## Project Development Roadmap
 
-### Phase 1: Foundation (Weeks 1-2)
-- Core project structure
-- MLX integration
-- Basic model loading
-- Simple CLI framework
+### ✅ Phase 1: Foundation (COMPLETE)
+- ✅ Core project structure (66 unit tests, 40 integration tests)
+- ✅ Full MLX integration with backend abstraction
+- ✅ Model loading for Llama, Mistral, GPT-2 architectures
+- ✅ Weight conversion pipeline (PyTorch → MLX)
+- ✅ Memory management and device detection
+- ✅ Comprehensive test suite (106 tests passing)
 
-### Phase 2: Training Pipeline (Weeks 3-4)
-- LoRA implementation
-- Training loop
-- Dataset loaders
-- Configuration system with train.yml
+### 🚧 Phase 2: Training Pipeline (IN PROGRESS)
+- 🚧 LoRA/QLoRA implementation for MLX
+- 🚧 Training loop orchestration
+- 🚧 Dataset loaders and preprocessing
+- 🚧 Configuration system with train.yml
 
 ### Phase 3: Optimization (Weeks 5-6)
 - Memory optimization

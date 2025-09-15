@@ -1,7 +1,7 @@
 # Project Structure
 
-**Last Updated**: September 2025  
-**Status**: ✅ Core Structure Implemented (Phase 1)
+**Last Updated**: September 2025
+**Status**: ✅ Phase 1 Core Structure Complete, 🚧 Phase 2 Training Pipeline
 
 ## Directory Layout
 
@@ -9,9 +9,9 @@
 ft/
 ├── src/
 │   └── finetune/
-│       ├── __init__.py
-│       ├── __main__.py           # Entry point for `python -m finetune`
-│       ├── cli/                  # CLI interface
+│       ├── __init__.py            ✅ COMPLETE
+│       ├── __main__.py           # Entry point for `python -m finetune` 🚧 PHASE 2
+│       ├── cli/                  # CLI interface 🚧 PHASE 2
 │       │   ├── __init__.py
 │       │   ├── app.py            # Main Typer app
 │       │   ├── commands/
@@ -23,22 +23,29 @@ ft/
 │       │   │   └── serve.py      # Inference server
 │       │   └── utils.py          # CLI utilities
 │       │
-│       ├── core/                 # Core functionality
-│       │   ├── __init__.py
-│       │   ├── config.py         # Configuration management
-│       │   ├── registry.py       # Model/dataset registry
-│       │   ├── cache.py          # Caching system
-│       │   └── exceptions.py     # Custom exceptions
+│       ├── core/                 # Core functionality ✅ COMPLETE
+│       │   ├── __init__.py        ✅
+│       │   ├── config.py         # Configuration management ✅
+│       │   ├── registry.py       # Model/dataset registry ✅
+│       │   ├── cache.py          # Caching system 🚧 PHASE 2
+│       │   └── exceptions.py     # Custom exceptions ✅
 │       │
-│       ├── models/               # Model handling
-│       │   ├── __init__.py
-│       │   ├── base.py           # Abstract base classes
-│       │   ├── loaders.py        # Model loading
-│       │   ├── adapters.py       # LoRA/QLoRA adapters
-│       │   ├── quantization.py   # Quantization logic
-│       │   └── hub.py            # HuggingFace Hub interface
+│       ├── models/               # Model handling ✅ COMPLETE
+│       │   ├── __init__.py        ✅
+│       │   ├── base.py           # Abstract base classes ✅
+│       │   ├── manager.py        # Model manager (main interface) ✅
+│       │   ├── mlx_models.py     # MLX implementations ✅
+│       │   ├── mlx_loader.py     # MLX loader/converter ✅
+│       │   └── torch_loader.py   # PyTorch fallback ✅
 │       │
-│       ├── data/                 # Data processing
+│       ├── backends/             # Backend abstraction ✅ COMPLETE
+│       │   ├── __init__.py        ✅
+│       │   ├── base.py           # Backend interface ✅
+│       │   ├── device.py         # Device manager ✅
+│       │   ├── mlx_backend.py    # MLX backend ✅
+│       │   └── torch_backend.py  # PyTorch backend ✅
+│       │
+│       ├── data/                 # Data processing 🚧 PHASE 2
 │       │   ├── __init__.py
 │       │   ├── dataset.py        # Dataset base class
 │       │   ├── loaders/          # Format-specific loaders
@@ -51,7 +58,7 @@ ft/
 │       │   ├── preprocessing.py  # Data preprocessing
 │       │   └── validation.py     # Data validation
 │       │
-│       ├── training/             # Training pipeline
+│       ├── training/             # Training pipeline 🚧 PHASE 2
 │       │   ├── __init__.py
 │       │   ├── trainer.py        # Main trainer class
 │       │   ├── mlx_trainer.py    # MLX-specific trainer
@@ -60,13 +67,13 @@ ft/
 │       │   ├── optimizers.py     # Custom optimizers
 │       │   └── metrics.py        # Evaluation metrics
 │       │
-│       ├── inference/            # Inference engine
+│       ├── inference/            # Inference engine 🚧 PHASE 3
 │       │   ├── __init__.py
 │       │   ├── engine.py         # Inference engine
 │       │   ├── server.py         # FastAPI server
 │       │   └── streaming.py      # Token streaming
 │       │
-│       ├── api/                  # REST API
+│       ├── api/                  # REST API 🚧 PHASE 4
 │       │   ├── __init__.py
 │       │   ├── app.py            # FastAPI app
 │       │   ├── routes/
@@ -78,7 +85,7 @@ ft/
 │       │   ├── schemas.py        # Pydantic models
 │       │   └── websocket.py      # WebSocket handlers
 │       │
-│       ├── ui/                   # Web UI
+│       ├── ui/                   # Web UI 🚧 PHASE 4
 │       │   ├── __init__.py
 │       │   ├── app.py            # Streamlit app
 │       │   ├── pages/
@@ -88,7 +95,7 @@ ft/
 │       │   │   └── datasets.py
 │       │   └── components.py     # Reusable UI components
 │       │
-│       └── utils/                # Utilities
+│       └── utils/                # Utilities 🚧 PHASE 2
 │           ├── __init__.py
 │           ├── logging.py        # Logging configuration
 │           ├── memory.py         # Memory management

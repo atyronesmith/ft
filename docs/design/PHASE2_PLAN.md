@@ -1,0 +1,321 @@
+# Phase 2 Development Plan: Training Pipeline Implementation
+
+**Last Updated**: September 2025
+**Status**: 🚧 Phase 2 In Progress - LoRA Implementation
+**Dependencies**: ✅ Phase 1 Complete (106 tests passing)
+
+## Overview
+
+Phase 2 focuses on implementing the core training pipeline with LoRA/QLoRA support, data processing, and CLI completion. This builds on the solid foundation of MLX integration and model loading established in Phase 1.
+
+## Current Status
+- ✅ **Foundation Complete**: MLX integration, model loading, weight conversion (106 tests)
+- 🚧 **Phase 2 Started**: LoRA implementation beginning
+
+## Phase 2 Priority Tasks
+
+### 1. **LoRA/QLoRA Implementation** (Weeks 3-4)
+```python
+# Core LoRA components needed:
+src/finetune/training/
+├── lora.py           # LoRA layer implementations in MLX
+├── optimizers.py     # MLX-compatible optimizers (AdamW, etc.)
+├── trainer.py        # Main training orchestrator
+└── callbacks.py      # Training callbacks (checkpointing, metrics)
+```
+
+**Key Implementation Areas:**
+- MLX LoRA layers with efficient matrix operations
+- Gradient computation and backpropagation in MLX
+- Memory-efficient training loops
+- Checkpoint saving/loading for LoRA adapters
+
+**Technical Requirements:**
+- Low-rank matrix decomposition: `W' = W + BA` where `B(d×r)` and `A(r×k)`, `r << min(d,k)`
+- Memory savings: For d=4096, k=4096, r=16: 67MB → 0.5MB (99% reduction)
+- MLX-native implementation for optimal performance
+- Adapter injection into existing model architectures
+
+### 2. **Data Pipeline** (Week 4)
+```python
+src/finetune/data/
+├── loaders/          # Format-specific data loaders
+│   ├── json.py      # JSON/JSONL dataset loading
+│   ├── csv.py       # CSV format support
+│   └── text.py      # Plain text processing
+├── templates.py      # Prompt templates (Alpaca, ChatML, etc.)
+├── preprocessing.py  # Tokenization and sequence preparation
+└── validation.py     # Data quality checks
+```
+
+**Features:**
+- Support for JSON, JSONL, CSV, and plain text formats
+- Configurable prompt templates (Alpaca, ChatML, Llama, custom)
+- Automatic sequence length optimization
+- Data validation and quality metrics
+- Memory-efficient streaming for large datasets
+
+### 3. **Configuration System** (Week 4)
+```python
+# Primary training configuration
+configs/train.yml     # Single file for all training parameters
+configs/profiles/     # Preset configurations for common scenarios
+├── chat.yml         # Chat model fine-tuning
+├── instruction.yml  # Instruction following
+├── code.yml         # Code generation models
+└── domain.yml       # Domain-specific adaptation
+```
+
+**Configuration Structure:**
+```yaml
+# train.yml example
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  backend: "auto"  # auto, mlx, pytorch
+  quantization: null  # 4bit, 8bit
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+training:
+  learning_rate: 1e-4
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  max_steps: 1000
+  warmup_steps: 100
+
+data:
+  train_file: "data/train.jsonl"
+  validation_file: "data/val.jsonl"
+  template: "alpaca"
+  max_length: 2048
+
+output:
+  output_dir: "./outputs"
+  checkpoint_steps: 100
+  eval_steps: 50
+```
+
+### 4. **CLI Completion** (Week 5)
+```python
+src/finetune/cli/commands/
+├── train.py         # ft train command
+├── model.py         # ft models list/pull commands
+├── dataset.py       # ft dataset prepare command
+└── evaluate.py      # ft evaluate command
+```
+
+**CLI Commands:**
+```bash
+# Core training workflow
+ft train                          # Train with train.yml
+ft train --config custom.yml     # Train with custom config
+ft train --model llama-7b --data data.jsonl  # Quick training
+
+# Model management
+ft models list                    # List available models
+ft models pull llama-7b          # Download model
+ft models info llama-7b          # Model information
+
+# Dataset operations
+ft dataset prepare data.jsonl    # Validate and preprocess
+ft dataset info data.jsonl       # Dataset statistics
+ft dataset template --format alpaca  # Apply template
+
+# Evaluation and export
+ft evaluate --checkpoint best     # Run evaluation
+ft export --format gguf          # Export model
+ft serve --port 8000             # Launch inference server
+```
+
+## Implementation Strategy
+
+### Week 1: LoRA Core
+**Priority: Critical Path**
+
+1. **MLX LoRA Layers**
+   - Implement `MLXLoRALinear` with efficient low-rank decomposition
+   - Add adapter injection into existing model architectures
+   - Create LoRA-specific parameter management
+   - Test memory efficiency vs full fine-tuning
+
+2. **Training Infrastructure**
+   - Build MLX training loop with gradient computation
+   - Implement memory-efficient batching
+   - Add basic checkpointing
+   - Validate training loss decreases
+
+**Deliverables:**
+- LoRA layers working in MLX
+- Basic training loop functional
+- Memory usage benchmarks
+- Unit tests for core components
+
+### Week 2: Training Pipeline
+**Priority: Critical Path**
+
+1. **Optimizer Integration**
+   - Implement MLX-compatible AdamW optimizer
+   - Add learning rate scheduling (cosine, linear, warmup)
+   - Memory optimization for large models
+   - Gradient accumulation for larger effective batches
+
+2. **Metrics & Monitoring**
+   - Training loss tracking
+   - Validation metrics (perplexity, accuracy)
+   - Memory usage monitoring
+   - Progress tracking and logging
+
+**Deliverables:**
+- Complete training pipeline
+- Optimizer implementations
+- Monitoring and metrics system
+- Integration tests
+
+### Week 3: Data & Configuration
+**Priority: High**
+
+1. **Data Loading**
+   - JSON/JSONL dataset loaders
+   - Prompt template system
+   - Data validation and preprocessing
+   - Streaming support for large datasets
+
+2. **Configuration Management**
+   - YAML-based configuration system
+   - Profile templates for common scenarios
+   - Parameter validation
+   - Environment variable support
+
+**Deliverables:**
+- Data pipeline working
+- Configuration system
+- Template library
+- Data validation tests
+
+### Week 4: CLI & Integration
+**Priority: High**
+
+1. **Command Line Interface**
+   - Complete `ft train` command
+   - Model management commands
+   - Dataset preparation utilities
+   - Progress display and user interaction
+
+2. **End-to-End Testing**
+   - Full training pipeline tests
+   - Integration with existing model loading
+   - Performance benchmarking
+   - Documentation and examples
+
+**Deliverables:**
+- Complete CLI implementation
+- End-to-end training workflow
+- Performance benchmarks
+- User documentation
+
+## Technical Priorities
+
+### Critical Path Items:
+1. **LoRA in MLX**: Core differentiator requiring custom implementation
+2. **Memory Management**: Essential for M4 optimization
+3. **Training Loop**: Heart of the fine-tuning capability
+4. **Data Pipeline**: Required for any real training
+
+### MLX-Specific Considerations:
+- **Lazy Evaluation**: Use `mx.eval()` strategically to control memory
+- **Unified Memory**: Leverage full system memory efficiently
+- **Graph Compilation**: Optimize frequently used operations
+- **Metal Shaders**: Potential for custom kernel optimization
+
+### Memory Optimization Strategies:
+- **Gradient Checkpointing**: Trade compute for memory
+- **LoRA Rank Tuning**: Balance performance vs memory usage
+- **Dynamic Batch Sizing**: Adjust based on available memory
+- **Model Sharding**: Support for models larger than memory
+
+## Success Criteria for Phase 2
+
+### Core Functionality:
+- [ ] Successfully fine-tune a 7B model with LoRA on sample dataset
+- [ ] Memory usage stays within reasonable bounds (< 50GB for 7B model)
+- [ ] Training loss decreases consistently over epochs
+- [ ] Save/load LoRA adapters and merge back to base model
+- [ ] Complete CLI workflow: `ft train` → `ft evaluate` → `ft export`
+
+### Performance Targets:
+- [ ] Training speed: >500 tokens/second on M4 Max
+- [ ] Memory efficiency: 4x reduction vs full fine-tuning
+- [ ] Model quality: Match or exceed PyTorch LoRA results
+- [ ] Stability: 1000+ training steps without OOM or crashes
+
+### Testing Requirements:
+- [ ] >90% test coverage for training components
+- [ ] Integration tests for full training pipeline
+- [ ] Performance regression tests
+- [ ] Memory usage validation tests
+
+## Development Approach
+
+### 1. **Test-Driven Development**
+- Write tests first for each component
+- Maintain >90% test coverage
+- Use existing MLX model infrastructure as foundation
+- Validate against PyTorch implementations where possible
+
+### 2. **Incremental Implementation**
+- Start with simplest LoRA implementation (rank=16, single target)
+- Add complexity gradually (QLoRA, different ranks, multiple targets)
+- Validate each step with small model tests
+- Profile memory and performance at each milestone
+
+### 3. **Memory-First Design**
+- Profile memory usage at each step
+- Implement gradient checkpointing early
+- Use MLX's lazy evaluation effectively
+- Monitor unified memory usage patterns
+
+### 4. **User Experience Focus**
+- Simple defaults that work out of the box
+- Clear error messages and progress indicators
+- Comprehensive logging for debugging
+- Examples and tutorials for common use cases
+
+## Risk Mitigation
+
+### Technical Risks:
+1. **MLX LoRA Performance**: Custom implementation may be slower than PyTorch
+   - *Mitigation*: Profile early, optimize critical paths, fallback options
+
+2. **Memory Management**: Complex memory patterns in unified memory
+   - *Mitigation*: Extensive testing, conservative defaults, monitoring
+
+3. **Training Stability**: MLX training loop may have different convergence
+   - *Mitigation*: Validate against known good PyTorch results
+
+### Project Risks:
+1. **Scope Creep**: Adding too many features before core works
+   - *Mitigation*: Strict priority ordering, MVP-first approach
+
+2. **Performance Expectations**: M4 may not match high-end GPU performance
+   - *Mitigation*: Clear performance documentation, efficiency focus
+
+## Next Steps
+
+### Immediate Actions (Week 1):
+1. Create `src/finetune/training/lora.py` with basic MLX LoRA implementation
+2. Implement simple training loop in `src/finetune/training/trainer.py`
+3. Add basic optimizer support
+4. Write comprehensive tests for LoRA layers
+
+### Week 1 Milestones:
+- [ ] LoRA layer creates correct parameter shapes
+- [ ] Forward pass produces expected outputs
+- [ ] Gradient computation works correctly
+- [ ] Memory usage is significantly lower than full fine-tuning
+- [ ] Basic training loop completes without errors
+
+This plan provides a structured approach to completing Phase 2 while maintaining the high quality and testing standards established in Phase 1. The focus on MLX-native implementations ensures optimal performance on Apple Silicon while the incremental approach reduces implementation risk.

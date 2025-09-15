@@ -16,10 +16,12 @@ class ModelRegistry:
         self.db_path = db_path or Path.home() / ".finetune" / "registry.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._closed = False
 
     def _init_db(self):
         """Initialize database tables."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS models (
@@ -54,6 +56,8 @@ class ModelRegistry:
             )
 
             conn.commit()
+        finally:
+            conn.close()
 
     def register_model(
         self,
@@ -161,3 +165,22 @@ class ModelRegistry:
             else:
                 cursor = conn.execute("SELECT * FROM training_runs ORDER BY started_at DESC")
             return [dict(row) for row in cursor.fetchall()]
+
+    def close(self):
+        """Mark registry as closed."""
+        self._closed = True
+        # Note: Don't import gc here as it may cause issues during shutdown
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure cleanup."""
+        self.close()
+        return False
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if not self._closed:
+            self.close()

@@ -171,6 +171,12 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
+filterwarnings = [
+    "ignore::ResourceWarning:unittest.mock",
+    "ignore::ResourceWarning:click.testing",
+    "ignore::ResourceWarning:codecs",
+    "ignore::ResourceWarning:importlib",
+]
 markers = [
     "requires_mlx: marks tests as requiring MLX (deselect with '-m \"not requires_mlx\"')",
     "requires_torch: marks tests as requiring PyTorch (deselect with '-m \"not requires_torch\"')",

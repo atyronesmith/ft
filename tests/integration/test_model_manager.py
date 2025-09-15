@@ -26,9 +26,18 @@ class TestModelManager:
             with patch("finetune.models.manager.MLXModelLoader"):
                 from finetune.models.manager import ModelManager
 
-                return ModelManager(
+                mgr = ModelManager(
                     cache_dir=temp_dir / "cache", registry_db=temp_dir / "registry.db"
                 )
+                try:
+                    yield mgr
+                finally:
+                    # Ensure cleanup
+                    if hasattr(mgr, 'registry') and mgr.registry:
+                        mgr.registry.close()
+                    # Force cleanup
+                    import gc
+                    gc.collect()
 
     def test_manager_initialization(self, temp_dir):
         """Test ModelManager initialization."""
@@ -49,6 +58,10 @@ class TestModelManager:
                 assert manager.registry is not None
                 assert manager.loader is not None
 
+                # Cleanup
+                if hasattr(manager, 'registry') and manager.registry:
+                    manager.registry.close()
+
     def test_manager_pytorch_fallback(self, temp_dir):
         """Test manager with PyTorch backend."""
         with patch("finetune.models.manager.device_manager") as mock_device:
@@ -61,6 +74,10 @@ class TestModelManager:
 
                 manager = ModelManager()
                 assert manager.loader is not None
+
+                # Cleanup
+                if hasattr(manager, 'registry') and manager.registry:
+                    manager.registry.close()
 
     def test_list_cached_models(self, manager, temp_dir):
         """Test listing cached models."""
@@ -379,28 +396,32 @@ class TestEndToEndModelLoading:
                 mock_device.get_optimal_backend.return_value = mock_backend
 
                 manager = ModelManager(cache_dir=Path(tmpdir) / "cache")
+                try:
+                    # This would typically download from HuggingFace
+                    # For testing, we'd mock this
+                    with patch.object(manager.loader, "load_from_huggingface") as mock_load:
+                        with patch.object(manager.loader, "get_model_info") as mock_info:
+                            mock_model = Mock()
+                            mock_model.config = ModelConfig(
+                                model_type="gpt2",
+                                vocab_size=50257,
+                                hidden_size=768,
+                                num_hidden_layers=12,
+                                num_attention_heads=12,
+                                intermediate_size=3072,
+                                max_position_embeddings=1024,
+                            )
+                            mock_load.return_value = mock_model
+                            mock_info.return_value = {
+                                "memory_footprint_mb": 100,
+                                "parameters": 1000000,
+                            }
 
-                # This would typically download from HuggingFace
-                # For testing, we'd mock this
-                with patch.object(manager.loader, "load_from_huggingface") as mock_load:
-                    with patch.object(manager.loader, "get_model_info") as mock_info:
-                        mock_model = Mock()
-                        mock_model.config = ModelConfig(
-                            model_type="gpt2",
-                            vocab_size=50257,
-                            hidden_size=768,
-                            num_hidden_layers=12,
-                            num_attention_heads=12,
-                            intermediate_size=3072,
-                            max_position_embeddings=1024,
-                        )
-                        mock_load.return_value = mock_model
-                        mock_info.return_value = {
-                            "memory_footprint_mb": 100,
-                            "parameters": 1000000,
-                        }
+                            model = manager.load_model("gpt2")
 
-                        model = manager.load_model("gpt2")
-
-                    assert model is not None
-                    mock_load.assert_called_once()
+                        assert model is not None
+                        mock_load.assert_called_once()
+                finally:
+                    # Cleanup
+                    if hasattr(manager, 'registry') and manager.registry:
+                        manager.registry.close()

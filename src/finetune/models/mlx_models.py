@@ -17,6 +17,7 @@ except ImportError:
     nn = None
 
 from finetune.models.base import BaseModel, ModelConfig
+from finetune.training.lora import LoRAConfig, apply_lora_to_model, get_lora_trainable_params
 
 if MLX_AVAILABLE:
 
@@ -297,6 +298,14 @@ if MLX_AVAILABLE:
             count_params(dict(self.parameters()))
             return total
 
+        def add_lora(self, lora_config: LoRAConfig) -> None:
+            """Add LoRA adapters to the model."""
+            apply_lora_to_model(self, lora_config)
+
+        def get_lora_params(self) -> tuple[list[mx.array], int, int]:
+            """Get LoRA parameters for training."""
+            return get_lora_trainable_params(self)
+
     class MLXGPTModel(nn.Module, BaseModel):
         """GPT-2 style model implementation in MLX."""
 
@@ -385,6 +394,14 @@ if MLX_AVAILABLE:
                         total += v.size
             count_params(dict(self.parameters()))
             return total
+
+        def add_lora(self, lora_config: LoRAConfig) -> None:
+            """Add LoRA adapters to the model."""
+            apply_lora_to_model(self, lora_config)
+
+        def get_lora_params(self) -> tuple[list[mx.array], int, int]:
+            """Get LoRA parameters for training."""
+            return get_lora_trainable_params(self)
 
     # Model registry when MLX is available
     MLX_MODEL_REGISTRY = {

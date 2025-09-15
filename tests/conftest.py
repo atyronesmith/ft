@@ -5,9 +5,33 @@ Pytest configuration and shared fixtures.
 import pytest
 import tempfile
 import json
+import warnings
+import gc
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 import numpy as np
+
+
+@pytest.fixture(autouse=True)
+def suppress_resource_warnings():
+    """Suppress ResourceWarning for known Python 3.13 mock issues."""
+    # Force collection before test
+    gc.collect()
+
+    # Close any lingering SQLite connections
+    import sqlite3
+    sqlite3.enable_callback_tracebacks(False)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=ResourceWarning)
+        yield
+
+    # Force garbage collection after each test
+    gc.collect()
+    # Additional collection to ensure cleanup
+    gc.collect()
+    # Final collection
+    gc.collect()
 
 
 @pytest.fixture

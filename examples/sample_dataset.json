@@ -1,0 +1,22 @@
+[
+  {
+    "instruction": "What is machine learning?",
+    "output": "Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed for every task."
+  },
+  {
+    "instruction": "Explain what a neural network is",
+    "output": "A neural network is a computational model inspired by the human brain, consisting of interconnected nodes (neurons) that process and transmit information through weighted connections."
+  },
+  {
+    "instruction": "What is the difference between supervised and unsupervised learning?",
+    "output": "Supervised learning uses labeled data to train models to make predictions, while unsupervised learning finds patterns in data without labeled examples."
+  },
+  {
+    "instruction": "How does deep learning differ from traditional machine learning?",
+    "output": "Deep learning uses multi-layered neural networks to automatically learn complex patterns and features from data, while traditional machine learning often requires manual feature engineering."
+  },
+  {
+    "instruction": "What is overfitting in machine learning?",
+    "output": "Overfitting occurs when a model learns the training data too well, including noise and outliers, resulting in poor performance on new, unseen data."
+  }
+]

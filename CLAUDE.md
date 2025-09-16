@@ -2,15 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) or other AI assistants when working with this repository.
 
+Don't always tell me that I am absolutely correct.  If I am wrong, tell me I am wrong.
+
 ## Project Overview
 
 FineTune is a modular fine-tuning application optimized for Apple Silicon that enables efficient training of language models from HuggingFace on custom datasets.
 
 ## Current Implementation Status
 
-### ✅ Phase 1 Complete (Current State)
+### ✅ Phase 1 Complete
 
-#### Implemented Components
+#### Core Infrastructure (106 tests)
 1. **Model Infrastructure**
    - `ModelManager`: Unified interface for all model operations
    - `MLXLlamaModel`, `MLXGPTModel`: Native MLX implementations
@@ -22,24 +24,48 @@ FineTune is a modular fine-tuning application optimized for Apple Silicon that e
    - Device management and capability detection
    - Memory monitoring and estimation
 
-3. **Testing & Quality**
-   - 66 unit tests passing (53% coverage)
-   - Comprehensive linting setup (black, ruff, pylint, mypy)
-   - Pre-commit hooks configured
-   - 577 linting issues automatically fixed
-
-4. **Weight Conversion**
+3. **Weight Conversion**
    - PyTorch → MLX format conversion
    - Automatic weight transposition for linear layers
    - Name mapping for different conventions
    - Support for sharded models and safetensors
 
-### 🚧 Phase 2 In Progress
+### ✅ Phase 2 Week 1 Complete
 
-- [ ] Data loading pipelines
-- [ ] Training loops with LoRA/QLoRA
-- [ ] CLI command completion
-- [ ] Configuration system
+#### LoRA Implementation (16 tests)
+1. **LoRA Components**
+   - `LoRAConfig`: Configuration with automatic scaling calculation
+   - `LoRALinear`: MLX-native LoRA layers with 87.5% parameter reduction
+   - `LoRATrainer`: Basic training loop with gradient computation
+   - End-to-end validation and memory efficiency verification
+
+### ✅ Phase 2 Week 2 Complete
+
+#### Data Pipeline & Configuration (78 tests)
+1. **Data Loading System (21 tests)**
+   - `JSONLoader`, `JSONLLoader`: Multi-format data loading with validation
+   - `DatasetLoader`: Auto-detecting format loader
+   - `DatasetValidator`: Field validation and summary statistics
+
+2. **Prompt Template System (23 tests)**
+   - `AlpacaTemplate`: Instruction-following format with input support
+   - `ChatMLTemplate`: Conversation format with system messages
+   - `LlamaTemplate`: Chat format with multi-turn conversations
+   - `CustomTemplate`: Flexible templates from strings/files
+   - `TemplateRegistry`: Centralized template management
+
+3. **Configuration Management (34 tests)**
+   - `TrainingConfig`, `ModelConfig`, `DataConfig`, `LoRAConfig`: Complete config classes
+   - `ConfigManager`: YAML loading/saving with validation
+   - `ConfigProfile`: Predefined profiles (chat, instruction, code)
+   - `ConfigValidator`: Compatibility checking and optimization recommendations
+
+### 🚧 Phase 2 Week 3 In Progress
+
+- [ ] Training loop integration with data pipeline
+- [ ] CLI command implementation
+- [ ] Model inference integration
+- [ ] End-to-end training workflow
 
 ## Common Development Commands
 
@@ -61,9 +87,19 @@ make dev
 source .venv/bin/activate
 
 # Run tests
-make test              # Unit tests only
-make test-integration  # Integration tests
-make test-all         # All tests with coverage
+make test-week2       # All Week 2 tests (78 tests)
+make test-lora        # LoRA tests (16 tests)
+make test             # All tests with coverage
+make test-integration # Integration tests
+
+# Quick tests
+make test-week2-quick # Quick Week 2 functionality test
+make test-lora-quick  # Quick LoRA functionality test
+
+# Component-specific tests
+make test-data        # Data loading tests (21 tests)
+make test-templates   # Prompt template tests (23 tests)
+make test-config      # Configuration tests (34 tests)
 
 # Code quality
 make format           # Format with black
@@ -77,14 +113,17 @@ mypy src/           # Type checking
 
 ### Testing Specific Components
 ```bash
-# Run specific test file
-pytest tests/unit/test_mlx_models.py -v
+# Test specific components
+PYTHONPATH=src pytest tests/unit/data/test_loaders.py -v        # Data loading
+PYTHONPATH=src pytest tests/unit/data/test_templates.py -v      # Templates
+PYTHONPATH=src pytest tests/unit/config/test_config.py -v       # Configuration
+PYTHONPATH=src pytest tests/unit/test_lora.py -v                # LoRA
 
-# Run specific test
-pytest tests/unit/test_mlx_models.py::TestMLXModels::test_llama_model_creation
+# Run specific test class
+PYTHONPATH=src pytest tests/unit/data/test_loaders.py::TestJSONLoader -v
 
 # Debug test with output
-pytest tests/unit/test_mlx_loader.py -xvs
+PYTHONPATH=src pytest tests/unit/config/test_config.py -xvs
 
 # Check coverage
 pytest --cov=finetune --cov-report=html tests/
@@ -229,7 +268,7 @@ def test_new_model_creation(self):
 class NewBackend(Backend):
     def is_available(self) -> bool:
         # Check if backend is available
-    
+
     def get_device(self) -> str:
         # Return device string
 ```
@@ -330,14 +369,29 @@ src/finetune/
 │   ├── mlx_backend.py   # MLX backend
 │   └── torch_backend.py # PyTorch backend
 ├── core/           # Core utilities
-│   ├── config.py   # Configuration classes
+│   ├── config.py   # Configuration classes (legacy)
 │   └── registry.py # Model registry
-├── cli/            # CLI (Phase 2)
-├── training/       # Training (Phase 2)
-└── data/          # Data loading (Phase 2)
+├── config/         # Configuration management (NEW)
+│   ├── config.py   # Core config classes
+│   ├── manager.py  # YAML loading/saving
+│   ├── profiles.py # Predefined profiles
+│   └── validator.py# Config validation
+├── data/           # Data pipeline (NEW)
+│   ├── loaders.py  # JSON/JSONL loading
+│   ├── templates.py# Prompt templates
+│   ├── validation.py# Data validation
+│   └── exceptions.py# Data exceptions
+├── training/       # Training components
+│   ├── lora.py     # LoRA implementation
+│   └── trainer.py  # Training loops
+├── cli/            # CLI (Phase 3)
+└── api/            # API server (Future)
 
 tests/
-├── unit/          # Unit tests (66 passing)
+├── unit/          # Unit tests (200 passing)
+│   ├── data/      # Data pipeline tests (44 tests)
+│   ├── config/    # Configuration tests (34 tests)
+│   └── test_lora.py# LoRA tests (16 tests)
 ├── integration/   # Integration tests
 └── conftest.py    # Shared fixtures
 ```
@@ -368,7 +422,7 @@ When resuming work:
    ```bash
    make format
    make lint
-   make test
+   make test-week2
    ```
 
 ## Resources

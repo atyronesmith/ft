@@ -90,8 +90,9 @@ class MLXModelLoader(ModelLoader):
         """Load a model from local path."""
         path = Path(path)
 
-        # Check if it's already an MLX model
-        if (path / "model.safetensors").exists() and (path / "config.json").exists():
+        # Check if it's already an MLX model by looking for our custom config format
+        # MLX models should have our converted config format, not raw HuggingFace config
+        if (path / "mlx_model.safetensors").exists() and (path / "mlx_config.json").exists():
             return self._load_mlx_model(path)
 
         # Otherwise, assume it's a HuggingFace model and convert
@@ -127,8 +128,8 @@ class MLXModelLoader(ModelLoader):
 
     def _load_mlx_model(self, path: Path) -> BaseModel:
         """Load native MLX model."""
-        # Load config
-        config = ModelConfig.load(path / "config.json")
+        # Load config (use our converted config format)
+        config = ModelConfig.load(path / "mlx_config.json")
 
         # Create model
         model = get_mlx_model(config)
@@ -139,23 +140,31 @@ class MLXModelLoader(ModelLoader):
         return model
 
     def _load_pytorch_weights(self, path: Path) -> dict[str, Any]:
-        """Load PyTorch weights from various formats."""
+        """Load weights from Hugging Face standard formats.
+
+        Prioritizes Safetensors (current standard) with fallback to PyTorch .bin format.
+        """
         import torch
+        from loguru import logger
 
         weights = {}
 
-        # Try different file formats
+        # Priority 1: Safetensors (current Hugging Face standard)
         if (path / "model.safetensors").exists():
-            # Load from safetensors
+            logger.info("Loading weights from Safetensors format (current standard)")
             from safetensors import safe_open
 
             with safe_open(path / "model.safetensors", framework="pt") as f:
                 for key in f.keys():
                     weights[key] = f.get_tensor(key)
 
+            logger.info(f"Loaded {len(weights)} parameters from Safetensors")
+
+        # Priority 2: PyTorch .bin (legacy format for compatibility)
         elif (path / "pytorch_model.bin").exists():
-            # Load from PyTorch bin
+            logger.info("Loading weights from PyTorch .bin format (legacy compatibility)")
             weights = torch.load(path / "pytorch_model.bin", map_location="cpu")
+            logger.info(f"Loaded {len(weights)} parameters from PyTorch .bin")
 
         elif (path / "model.pt").exists():
             # Load from .pt file
@@ -224,12 +233,40 @@ class MLXModelLoader(ModelLoader):
             }
 
         elif "gpt" in model_type.lower():
-            return {
-                "wte.weight": "wte.weight",
-                "wpe.weight": "wpe.weight",
-                "ln_f.weight": "ln_f.weight",
-                "ln_f.bias": "ln_f.bias",
+            # GPT-2 / DialoGPT parameter mapping (matches actual PyTorch structure)
+            mapping = {
+                # Embeddings
+                "transformer.wte.weight": "wte.weight",
+                "transformer.wpe.weight": "wpe.weight",
+                # Final layer norm
+                "transformer.ln_f.weight": "ln_f.weight",
+                "transformer.ln_f.bias": "ln_f.bias",
             }
+
+            # Add layer-specific mappings for transformer blocks
+            for i in range(50):  # Support up to 50 layers
+                layer_prefix = f"transformer.h.{i}"
+                mlx_prefix = f"layers.{i}"  # Use layers.0, layers.1, etc. format for MLX
+
+                # Attention layers (keep GPT-2 naming)
+                mapping[f"{layer_prefix}.attn.c_attn.weight"] = f"{mlx_prefix}.attn.c_attn.weight"
+                mapping[f"{layer_prefix}.attn.c_attn.bias"] = f"{mlx_prefix}.attn.c_attn.bias"
+                mapping[f"{layer_prefix}.attn.c_proj.weight"] = f"{mlx_prefix}.attn.c_proj.weight"
+                mapping[f"{layer_prefix}.attn.c_proj.bias"] = f"{mlx_prefix}.attn.c_proj.bias"
+
+                # MLP layers (keep GPT-2 naming)
+                mapping[f"{layer_prefix}.mlp.c_fc.weight"] = f"{mlx_prefix}.mlp.c_fc.weight"
+                mapping[f"{layer_prefix}.mlp.c_fc.bias"] = f"{mlx_prefix}.mlp.c_fc.bias"
+                mapping[f"{layer_prefix}.mlp.c_proj.weight"] = f"{mlx_prefix}.mlp.c_proj.weight"
+                mapping[f"{layer_prefix}.mlp.c_proj.bias"] = f"{mlx_prefix}.mlp.c_proj.bias"
+
+                # Layer norms (keep GPT-2 naming)
+                mapping[f"{layer_prefix}.ln_1.weight"] = f"{mlx_prefix}.ln_1.weight"
+                mapping[f"{layer_prefix}.ln_1.bias"] = f"{mlx_prefix}.ln_1.bias"
+                mapping[f"{layer_prefix}.ln_2.weight"] = f"{mlx_prefix}.ln_2.weight"
+                mapping[f"{layer_prefix}.ln_2.bias"] = f"{mlx_prefix}.ln_2.bias"
+
+            return mapping
 
         # Default: return as-is
         return {}
@@ -240,6 +277,7 @@ class MLXModelLoader(ModelLoader):
             "rotary_emb",  # Computed dynamically
             "masked_bias",  # GPT-2 specific, not needed
             "attn.bias",  # Causal mask, computed dynamically
+            "lm_head.weight",  # Skip for tied embeddings (GPT-2 models)
         ]
 
         return any(pattern in name for pattern in skip_patterns)

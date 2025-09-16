@@ -1,17 +1,30 @@
 # Technology Stack & Libraries
 
-**Last Updated**: September 15, 2025
-**Status**: ✅ Phase 1 Core Stack Complete, ✅ PHASE 2 COMPLETE - All Training Libraries Implemented
+> Canonical Header
+- Version: 0.1.0
+- Status: See STATUS.md
+- Owners: Platform TL; ML Lead
+- Last Updated: 2025-09-16
+- Linked Commit: 682ba289170b (describe: 682ba28)
 
 ## Core ML Frameworks
+## Document Scope
+- Enumerates technologies in use today and near-term planned options.
+- For current project status and metrics, see STATUS.md.
 
-### Primary Training Backend ✅ IMPLEMENTED
-- **MLX** (0.15+): Apple's ML framework optimized for Apple Silicon
+## Out of Scope / Planned
+- Advanced quantization/QLoRA specifics where code support is pending.
+
+
+### Primary Training Backend ✅ IMPLEMENTED + REAL MODEL INTEGRATION
+- **MLX** (0.29+): Apple's ML framework optimized for Apple Silicon
   - ✅ Native M4 acceleration
   - ✅ Unified memory architecture support
   - ✅ Efficient matrix operations
   - ✅ Automatic differentiation
   - ✅ Full model conversion pipeline
+  - ✅ Custom transformer weight loading (breakthrough for real models)
+  - ✅ Successfully loads microsoft/DialoGPT-small (39M parameters)
 
 ### Secondary Training Backend ✅ IMPLEMENTED
 - **PyTorch** (2.1+): Fallback for unsupported operations
@@ -22,12 +35,16 @@
 
 ## Model & NLP Libraries
 
-### Model Management ✅ IMPLEMENTED
+### Model Management ✅ IMPLEMENTED + REAL INTEGRATION
 - **Transformers** (4.36+): HuggingFace's model library
   - ✅ Model downloading and caching
   - ✅ Tokenizer support
   - ✅ Pre-trained weight loading
   - ✅ Configuration management
+  - ✅ Real model integration (microsoft/DialoGPT-small working)
+- **Safetensors** (0.6+): Modern weight format with priority loading
+  - ✅ Primary loading format for HuggingFace models
+  - ✅ PyTorch .bin fallback for legacy compatibility
   - ✅ Safetensors and sharded model support
 
 ### Optimization Techniques ✅ IMPLEMENTED
@@ -109,7 +126,7 @@
   - Real-time metric visualization
   - Interactive configuration
   - File upload interface
-  
+
 Alternative:
 - **Gradio** (4.8+): ML-focused UI components
 
@@ -170,6 +187,14 @@ Alternative:
   - ✅ Automated quality checks
 
 ### Documentation
+### Benchmarking
+- Methodology: see `docs/perf/METHODOLOGY.md`
+- Harness: `scripts/benchmark.py`
+- Example:
+```bash
+python scripts/benchmark.py --backend mlx --layers 4 --hidden-size 2048 \
+  --seq-len 1024 --batch-size 4 --steps 30 --warmup 5 --dtype fp16
+```
 - **mkdocs** (1.5+): Documentation site generator
 - **mkdocs-material** (9.5+): Material theme
 - **pdoc** (14.1+): API documentation

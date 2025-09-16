@@ -1,9 +1,21 @@
 # MLX Architecture and Integration
 
-**Last Updated**: September 2025
-**Status**: ✅ Phase 1 Complete - 106 Tests Passing, Phase 2 LoRA Implementation Started
+> Canonical Header
+- Version: 0.1.0
+- Status: See STATUS.md
+- Owners: ML Lead; Backend TL
+- Last Updated: 2025-09-16
+- Linked Commit: 682ba289170b (describe: 682ba28)
 
 ## Executive Summary
+## Document Scope
+- Details MLX-first backend architecture, conversion pipeline, and integration points.
+- For overall project status and test counts, see STATUS.md.
+
+## Out of Scope / Planned
+- Distributed training and ANE integration (see Phase 3+ roadmap)
+- Formal checkpoint portability spec (see future doc)
+
 
 MLX (Machine Learning X) is Apple's deep learning framework specifically designed for Apple Silicon, providing a NumPy-like interface with automatic differentiation and optimized performance on M-series chips. This document details how FineTune leverages MLX as its primary training backend to achieve efficient local fine-tuning on Mac hardware.
 
@@ -95,7 +107,7 @@ The backend abstraction layer (`backends/base.py`) defines a common interface th
 class MLXBackend(Backend):
     """
     MLX implementation optimized for Apple Silicon.
-    
+
     Key responsibilities:
     1. Model weight conversion (PyTorch → MLX)
     2. Efficient memory management
@@ -139,11 +151,11 @@ class MemoryManager:
     """
     Manages unified memory allocation for MLX operations.
     """
-    
+
     def __init__(self, reserved_gb: int = 8):
         self.total_memory = self._get_total_memory()
         self.reserved = reserved_gb * 1024**3
-        
+
     def estimate_model_memory(self, param_count: int, dtype: str) -> int:
         """
         Estimate memory requirements:
@@ -151,7 +163,7 @@ class MemoryManager:
         - Gradients: same as weights
         - Optimizer states (Adam): 2x weights (momentum + variance)
         - Activations: ~10-20% of weights (depends on batch size)
-        
+
         Total ≈ 4-5x model weight size
         """
         bytes_per_param = 2 if dtype == "float16" else 4
@@ -166,27 +178,27 @@ class MemoryManager:
 def convert_transformer_to_mlx(pytorch_model, config):
     """
     Convert a HuggingFace Transformer model to MLX.
-    
+
     Steps:
     1. Extract layer configurations
     2. Initialize MLX modules with same architecture
     3. Copy weights as MLX arrays
     4. Verify conversion with forward pass
     """
-    
+
     mlx_model = MLXTransformer(
         vocab_size=config.vocab_size,
         hidden_size=config.hidden_size,
         num_layers=config.num_hidden_layers,
         num_heads=config.num_attention_heads,
     )
-    
+
     # Convert weights layer by layer
     for pytorch_name, pytorch_param in pytorch_model.named_parameters():
         mlx_name = map_pytorch_to_mlx_name(pytorch_name)
         mlx_param = mx.array(pytorch_param.detach().numpy())
         mlx_model.set_parameter(mlx_name, mlx_param)
-    
+
     return mlx_model
 ```
 
@@ -196,17 +208,17 @@ def convert_transformer_to_mlx(pytorch_model, config):
 def mlx_training_step(model, batch, optimizer):
     """
     Single training step using MLX.
-    
+
     Key differences from PyTorch:
     - Gradients computed via mx.value_and_grad()
     - No explicit backward() call
     - Optimizer updates happen on model directly
     """
-    
+
     def loss_fn(model, batch):
         # Forward pass
         logits = model(batch['input_ids'])
-        
+
         # Compute loss
         loss = mx.mean(
             nn.losses.cross_entropy(
@@ -215,16 +227,16 @@ def mlx_training_step(model, batch, optimizer):
             )
         )
         return loss
-    
+
     # Compute loss and gradients in one call
     loss, grads = mx.value_and_grad(loss_fn)(model, batch)
-    
+
     # Update model parameters
     optimizer.update(model, grads)
-    
+
     # Force computation (MLX is lazy by default)
     mx.eval(loss)
-    
+
     return loss.item()
 ```
 
@@ -236,26 +248,26 @@ LoRA (Low-Rank Adaptation) is particularly well-suited for MLX due to memory eff
 class MLXLoRALayer(nn.Module):
     """
     LoRA layer implementation in MLX.
-    
+
     Instead of updating W (d×k), we learn:
     W' = W + BA where B (d×r) and A (r×k), r << min(d,k)
-    
+
     Memory saved: d*k → d*r + r*k
     For d=4096, k=4096, r=16: 67MB → 0.5MB (99% reduction)
     """
-    
+
     def __init__(self, in_features: int, out_features: int, rank: int = 16):
         super().__init__()
         self.base_layer = nn.Linear(in_features, out_features)
-        
+
         # LoRA matrices
         self.lora_a = nn.Linear(in_features, rank, bias=False)
         self.lora_b = nn.Linear(rank, out_features, bias=False)
         self.scaling = 1.0 / rank
-        
+
         # Freeze base layer
         self.base_layer.freeze()
-    
+
     def __call__(self, x):
         base_output = self.base_layer(x)
         lora_output = self.lora_b(self.lora_a(x)) * self.scaling
@@ -293,7 +305,7 @@ PyTorch GPU (24GB limit):
 
 MLX on M4 Max (128GB available):
 - Model weights (FP16): 13.4GB
-- Gradients: 13.4GB  
+- Gradients: 13.4GB
 - Optimizer states: 26.8GB
 - Activations: ~10GB
 - Total: ~64GB (50% utilization)
@@ -321,19 +333,19 @@ def get_optimal_backend():
     3. Memory constraints
     4. User preferences
     """
-    
+
     device_info = detect_hardware()
-    
+
     if device_info.is_apple_silicon:
         if mlx_available() and model_fits_in_memory():
             return MLXBackend()
         else:
             logger.warning("MLX unavailable or insufficient memory")
             return PyTorchBackend(device="mps")
-    
+
     elif cuda_available():
         return PyTorchBackend(device="cuda")
-    
+
     else:
         return PyTorchBackend(device="cpu")
 ```
@@ -346,25 +358,25 @@ MLX supports automatic mixed precision for optimal performance:
 def setup_mixed_precision(model, config):
     """
     Configure mixed precision training in MLX.
-    
+
     - Compute in FP16/BF16 for speed
     - Master weights in FP32 for stability
     - Automatic loss scaling
     """
-    
+
     if config.training.fp16:
         # MLX handles this automatically
         model = model.astype(mx.float16)
-        
+
         # Keep master weights in FP32
         optimizer = optim.AdamW(
             learning_rate=config.training.learning_rate,
             weight_decay=config.training.weight_decay,
         )
-        
+
         # Loss scaling for gradient stability
         loss_scale = 2**16
-        
+
     return model, optimizer, loss_scale
 ```
 
@@ -376,16 +388,16 @@ Ensuring checkpoints work across backends:
 def save_universal_checkpoint(mlx_model, path):
     """
     Save MLX model in format compatible with PyTorch.
-    
+
     This enables:
     - Training with MLX
     - Inference with PyTorch
     - Upload to HuggingFace Hub
     """
-    
+
     # Extract MLX weights
     mlx_state = mlx_model.parameters()
-    
+
     # Convert to PyTorch format
     pytorch_state = {}
     for name, param in mlx_state.items():
@@ -394,7 +406,7 @@ def save_universal_checkpoint(mlx_model, path):
         pytorch_state[pytorch_name] = torch.from_numpy(
             np.array(param)
         )
-    
+
     # Save in PyTorch format
     torch.save({
         'model_state_dict': pytorch_state,
@@ -481,7 +493,7 @@ dataset = load_entire_dataset()  # May OOM
 accumulated_grads = None
 for micro_batch in split_batch(batch, micro_batch_size):
     loss, grads = mx.value_and_grad(loss_fn)(model, micro_batch)
-    
+
     if accumulated_grads is None:
         accumulated_grads = grads
     else:
@@ -503,17 +515,17 @@ import mlx.core as mx
 class MLXProfiler:
     def __init__(self):
         self.timings = {}
-    
+
     def profile_operation(self, name, operation, *args):
         mx.eval(*args)  # Ensure previous ops complete
         start = time.perf_counter()
-        
+
         result = operation(*args)
         mx.eval(result)  # Force evaluation
-        
+
         elapsed = time.perf_counter() - start
         self.timings[name] = elapsed
-        
+
         return result
 ```
 
@@ -525,7 +537,7 @@ def monitor_memory_usage():
     """
     import psutil
     process = psutil.Process()
-    
+
     return {
         'rss_gb': process.memory_info().rss / 1024**3,
         'available_gb': psutil.virtual_memory().available / 1024**3,
@@ -541,16 +553,16 @@ def validate_mlx_conversion(pytorch_model, mlx_model, sample_input):
     """
     # PyTorch forward pass
     pytorch_output = pytorch_model(sample_input)
-    
+
     # MLX forward pass
     mlx_input = mx.array(sample_input.numpy())
     mlx_output = mlx_model(mlx_input)
-    
+
     # Compare outputs
     difference = np.abs(
         pytorch_output.detach().numpy() - np.array(mlx_output)
     )
-    
+
     assert difference.max() < 1e-3, f"Max difference: {difference.max()}"
     return True
 ```

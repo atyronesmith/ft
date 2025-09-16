@@ -1,18 +1,33 @@
 # Fine-Tuning Application Architecture
 
-**Last Updated**: September 15, 2025
-**Status**: ✅ Phase 1 Complete (106 tests), ✅ PHASE 2 COMPLETE (184 tests), 🚀 Production Ready
+> Canonical Header
+- Version: 0.1.0
+- Status: See STATUS.md
+- Owners: Architecture TL; ML Lead; Product Eng
+- Last Updated: 2025-09-16
+- Linked Commit: 682ba289170b (describe: 682ba28)
 
 ## System Overview
 A modular, extensible fine-tuning platform leveraging Apple Silicon optimization for efficient local model training.
+## Document Scope
+- This document describes current high-level architecture and shipped components in Phase 1–2.
+- It links to STATUS.md for authoritative status and test counts.
+
+## Out of Scope / Planned
+- CSV/TSV/Parquet/HTML loaders beyond JSON/JSONL (planned Phase 3)
+- Full Web dashboard and API endpoints (planned Phase 4)
+- Quantization and multi-device training (planned Phase 3+)
+
 
 ## Core Architecture Components
 
-### 1. Model Layer ✅ IMPLEMENTED
+### 1. Model Layer ✅ IMPLEMENTED + REAL MODEL INTEGRATION
 - **Model Manager**: Unified interface for all model operations with automatic backend selection
 - **MLX Native Models**: Direct MLX implementations (Llama, Mistral, GPT-2) with optimal Apple Silicon performance
+- **Real HuggingFace Integration**: Successfully loads microsoft/DialoGPT-small (39M parameters)
+- **Custom MLX Weight Loading**: Solves transformer architecture parameter loading limitations
 - **PyTorch Fallback**: Seamless fallback to PyTorch MPS/CUDA when MLX unavailable
-- **Weight Conversion**: Automated PyTorch → MLX conversion pipeline with validation
+- **Weight Conversion**: Automated PyTorch → MLX conversion with Safetensors priority
 - **Model Loading**: Support for sharded models, safetensors, and HuggingFace Hub integration
 
 ### 2. Data Pipeline ✅ COMPLETE
@@ -44,6 +59,10 @@ A modular, extensible fine-tuning platform leveraging Apple Silicon optimization
 - Transformers library for model handling
 - FastAPI for API server
 - Typer for CLI interface
+
+Benchmarking & Methodology:
+- Methodology: see `docs/perf/METHODOLOGY.md`
+- Harness: `scripts/benchmark.py` for synthetic training throughput and memory reporting
 
 ### Storage & Persistence
 - SQLite for metadata and job tracking
@@ -110,7 +129,7 @@ A modular, extensible fine-tuning platform leveraging Apple Silicon optimization
 ### Model Capabilities
 - **Supported Architectures**: Llama, Mistral, Phi, Qwen, Gemma, GPT-2/J, BERT variants
 - **Size Range**: 0.5B to 70B parameters (with quantization)
-- **Training Methods**: 
+- **Training Methods**:
   - Full fine-tuning (small models)
   - LoRA/QLoRA (recommended for M4)
   - Prefix tuning
@@ -197,7 +216,7 @@ POST /api/inference/generate
 ```
 ~/Library/Application Support/FineTune/
 ├── models/          # Downloaded models
-├── datasets/        # Cached datasets  
+├── datasets/        # Cached datasets
 ├── checkpoints/     # Training checkpoints
 ├── configs/         # User configurations
 └── logs/           # Training logs

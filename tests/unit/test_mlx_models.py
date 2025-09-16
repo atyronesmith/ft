@@ -151,7 +151,7 @@ class TestMLXModels:
         model = MLXGPTModel(small_config)
 
         assert model.config == small_config
-        assert len(model.blocks) == small_config.num_hidden_layers
+        assert len(model.layers) == small_config.num_hidden_layers
         assert model.num_parameters > 0
 
     @pytest.mark.requires_mlx

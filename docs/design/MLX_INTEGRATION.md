@@ -1,9 +1,20 @@
 # MLX Integration Plan for Phase 1
 
-**Last Updated**: September 15, 2025
-**Status**: ✅ Phase 1 Complete (106 tests), ✅ PHASE 2 COMPLETE (290+ total tests passing), 🚀 Production Ready
+> Canonical Header
+- Version: 0.1.0
+- Status: See STATUS.md
+- Owners: ML Lead; Backend TL
+- Last Updated: 2025-09-16
+- Linked Commit: 682ba289170b (describe: 682ba28)
 
 ## Overview
+## Document Scope
+- Phase-1 integration plan and notes; some sections act as retrospective.
+- For current status metrics and test counts, see STATUS.md.
+
+## Out of Scope / Planned
+- Advanced memory optimizations and multi-device training (Phase 3+)
+
 MLX is Apple's machine learning framework optimized for Apple Silicon. This document outlines the integration steps needed for Phase 1 foundation.
 
 ## Core Components
@@ -98,12 +109,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 def load_and_convert_model(model_name: str):
     # Load PyTorch model
     torch_model = AutoModelForCausalLM.from_pretrained(model_name)
-    
+
     # Convert to MLX
     mlx_weights = {}
     for name, param in torch_model.named_parameters():
         mlx_weights[name] = mx.array(param.detach().numpy())
-    
+
     return mlx_weights
 ```
 
@@ -122,13 +133,13 @@ def train_step(model, batch, optimizer):
             )
         )
         return loss
-    
+
     # Compute gradients
     loss, grads = mx.value_and_grad(loss_fn)(model, batch)
-    
+
     # Update weights
     optimizer.update(model, grads)
-    
+
     return loss
 ```
 
@@ -140,13 +151,13 @@ import psutil
 class MemoryManager:
     def __init__(self, reserved_gb: int = 8):
         self.reserved_bytes = reserved_gb * 1024**3
-        
+
     def get_available_memory(self):
         total = psutil.virtual_memory().total
         used = psutil.virtual_memory().used
         available = total - used - self.reserved_bytes
         return max(0, available)
-    
+
     def adjust_batch_size(self, model_size: int):
         available = self.get_available_memory()
         # Estimate batch size based on model and available memory
@@ -213,7 +224,7 @@ class BackendSelector:
 ### ✅ Completed Items
 ✓ Successfully load models (GPT-2, Llama, Mistral) in MLX
 ✓ Run forward pass and get logits
-✓ Compute loss and gradients  
+✓ Compute loss and gradients
 ✓ Update weights with optimizer
 ✓ Save and load checkpoints
 ✓ Automatic fallback to PyTorch when MLX unavailable
@@ -254,8 +265,43 @@ class BackendSelector:
 - **Shell Completion**: Bash/zsh completion for all make targets
 - **87.5% Parameter Reduction**: Validated in quick test
 
-## ✅ Phase 2 Week 1 Complete
+## ✅ Phase 2 COMPLETE - Real Model Integration Working
 - ✅ LoRA/QLoRA implementation in MLX (COMPLETE)
-- 🚧 Advanced memory optimization techniques (Week 2)
-- 🚧 Multi-device training support (Week 3+)
-- 🚧 Custom CUDA kernel equivalents in Metal (Week 4+)
+- ✅ Real HuggingFace model integration (microsoft/DialoGPT-small working)
+- ✅ Custom MLX weight loading for transformer architectures
+- ✅ Safetensors priority loading with PyTorch .bin fallback
+- ✅ End-to-end workflow: Dataset → Templates → Model → Fine-tuning
+- ✅ Production CLI commands: `ft train quick`, `ft train start`, `ft train validate`
+- 🚧 Advanced memory optimization techniques (Phase 3)
+- 🚧 Multi-device training support (Phase 3+)
+- 🚧 Custom CUDA kernel equivalents in Metal (Phase 3+)
+
+### 🚀 Real Model Integration Breakthrough
+**Key Achievement**: Successfully resolved MLX module hierarchy limitations for transformer architectures
+
+**Problem**: MLX doesn't automatically register Python list items as sub-modules, causing parameter loading failures for transformer blocks stored as `self.layers = [...]`
+
+**Solution**: Implemented custom `update()` method in MLXGPTModel that:
+1. Separates `layers.X.*` parameters from top-level parameters
+2. Rebuilds nested parameter structure for each transformer layer
+3. Updates top-level parameters using standard MLX method
+4. Updates each layer individually using layer-specific weights
+
+**Result**:
+- ✅ Real microsoft/DialoGPT-small model loads successfully (39M parameters)
+- ✅ Safetensors format loading with proper weight conversion
+- ✅ Complete parameter mapping from PyTorch to MLX naming conventions
+- ✅ End-to-end fine-tuning workflow operational
+
+### 🎯 Production Ready Commands
+```bash
+# Quick fine-tuning
+ft train quick microsoft/DialoGPT-small examples/sample_dataset.json
+
+# Production training
+ft train start microsoft/DialoGPT-small data/training.json \
+  --template chatml --epochs 5 --batch-size 4 --lora-rank 16 --profile chat
+
+# Configuration validation
+ft train validate configs/production.yml
+```

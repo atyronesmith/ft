@@ -1,9 +1,20 @@
 # Project Structure
 
-**Last Updated**: September 2025
-**Status**: ✅ Phase 1 Complete (106 tests), ✅ Phase 2 Week 1-2 Complete (94 new tests)
+> Canonical Header
+- Version: 0.1.0
+- Status: See STATUS.md
+- Owners: Architecture TL; DevEx Owner
+- Last Updated: 2025-09-16
+- Linked Commit: 682ba289170b (describe: 682ba28)
 
 ## Directory Layout
+## Document Scope
+- Describes the repository layout and intended responsibilities.
+- For live status, test counts, and phase completion, see STATUS.md.
+
+## Out of Scope / Planned
+- Modules marked PHASE 3/4 are placeholders; content may change.
+
 
 ```
 ft/

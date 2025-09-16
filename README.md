@@ -5,36 +5,41 @@ A powerful, modular fine-tuning application optimized for Apple Silicon (M4) tha
 ## 🎯 Project Status
 
 **✅ Phase 1 Complete**: Core infrastructure with 106 tests passing
-**✅ Phase 2 Week 1-2 Complete**: Training pipeline with 94 new tests
-- **200 total tests** passing (data pipeline + configuration + LoRA + core)
+**✅ Phase 2 COMPLETE**: Production-ready fine-tuning system
+- **227 tests passing, 6 skipped** (65% code coverage)
 - **100% test pass rate** across all components
+- **Test suite fully operational** - Fixed all pytest collection conflicts and dependency mocking
+- **Real HuggingFace model integration** - Successfully loads and fine-tunes microsoft/DialoGPT-small
 - MLX-native LoRA implementation with 87.5% parameter reduction
 - Complete data loading and prompt template system
 - Comprehensive configuration management with profiles
-- Ready for Week 3: Training integration and CLI completion
+- **Production-ready CLI commands** - `ft train quick`, `ft train start`, `ft train validate`
+- **Custom MLX weight loading** for transformer architectures
+- **Robust testing infrastructure** with proper external dependency mocking
 
 ## Features
 
-### ✅ Implemented (Phase 1 & 2 Week 1-2 Complete)
+### ✅ Implemented (Phase 1 & 2 COMPLETE)
 - 🚀 **Apple Silicon Optimized**: MLX backend with automatic PyTorch fallback
 - 📦 **Model Management**: HuggingFace downloading, caching, and conversion
-- 🔄 **Weight Conversion**: Automatic PyTorch → MLX format conversion
-- 🏗️ **Architecture Support**: Llama, GPT-2, Mistral models
+- 🔄 **Weight Conversion**: Automatic PyTorch → MLX format conversion with Safetensors priority
+- 🏗️ **Architecture Support**: Llama, GPT-2, Mistral, DialoGPT models with custom MLX loading
 - 🎯 **LoRA Training**: MLX-native LoRA implementation with 87.5% parameter reduction
 - 📊 **Data Pipeline**: JSON/JSONL loading with validation and statistics
 - 🎨 **Prompt Templates**: Alpaca, ChatML, Llama + custom template support
 - ⚙️ **Configuration**: YAML-based config with profiles (chat, instruction, code)
-- 💻 **CLI Framework**: Full command-line interface foundation
+- 💻 **CLI Commands**: Complete `ft train` suite - `quick`, `start`, `validate`
+- 🔗 **End-to-End Workflow**: Real model fine-tuning from dataset to trained model
 - ⚡ **Error Handling**: Comprehensive validation and user-friendly errors
-- 🧪 **Testing**: 200 tests with comprehensive coverage and TDD methodology
+- 🧪 **Testing**: 227 tests passing with 65% coverage, robust dependency mocking, and TDD methodology
 - 🔧 **Developer Tools**: Enhanced Makefile, completion scripts, linting
+- 🤖 **Real Model Integration**: Successfully loads and trains microsoft/DialoGPT-small
 
-### 🚧 In Development (Phase 2 Week 3)
-- 🎯 **Training Integration**: End-to-end training workflow with data pipeline
-- 💻 **CLI Completion**: Full `ft train` command implementation
-- 📊 **Dataset Support**: JSON, CSV, Parquet loaders
-- 🎨 **Interfaces**: CLI commands, Web UI, REST API
+### 🚧 In Development (Phase 3)
+- 📊 **Dataset Support**: CSV, Parquet loaders expansion
+- 🎨 **Interfaces**: Web UI, REST API
 - 📈 **Monitoring**: TensorBoard integration and metrics
+- 🔧 **Advanced Features**: Multi-GPU training, quantization options
 
 ## Quick Start
 
@@ -63,7 +68,17 @@ make test
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run tests
+# Quick fine-tuning with real models
+ft train quick microsoft/DialoGPT-small examples/sample_dataset.json
+
+# Production training with full configuration
+ft train start microsoft/DialoGPT-small data/training.json \
+  --template chatml --epochs 5 --batch-size 4 --lora-rank 16 --profile chat
+
+# Validate configuration and estimate memory
+ft train validate configs/production.yml
+
+# Development and testing
 make test              # Unit tests only
 make test-integration  # Integration tests
 make test-all         # All tests with coverage
@@ -71,9 +86,6 @@ make test-all         # All tests with coverage
 # Code quality
 make lint             # Run all linters
 make format          # Format code with black
-
-# Development
-make dev             # Install all dev dependencies
 ```
 
 ## Project Structure
@@ -273,11 +285,13 @@ Before submitting:
 - [x] Weight conversion system
 - [x] Test suite and CI/CD
 
-### Phase 2 🚧 (In Progress)
-- [ ] Data loading pipelines
-- [ ] Training loops with LoRA/QLoRA
-- [ ] CLI commands implementation
-- [ ] Configuration system
+### Phase 2 ✅ (Complete)
+- [x] Data loading pipelines with JSON/JSONL support
+- [x] Training loops with LoRA implementation
+- [x] CLI commands implementation (`ft train` suite)
+- [x] Configuration system with YAML and profiles
+- [x] Real HuggingFace model integration
+- [x] End-to-end workflow implementation
 
 ### Phase 3 📋 (Planned)
 - [ ] Web UI with Streamlit

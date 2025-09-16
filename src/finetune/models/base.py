@@ -34,17 +34,65 @@ class ModelConfig:
     @classmethod
     def from_huggingface(cls, hf_config: dict[str, Any]) -> "ModelConfig":
         """Create from HuggingFace config."""
+        # Handle different naming conventions across model architectures
+        model_type = hf_config.get("model_type", "unknown")
+
+        # Map hidden_size field (varies by model type)
+        if "hidden_size" in hf_config:
+            hidden_size = hf_config["hidden_size"]
+        elif "n_embd" in hf_config:  # GPT-2, DialoGPT
+            hidden_size = hf_config["n_embd"]
+        elif "d_model" in hf_config:  # T5, some other models
+            hidden_size = hf_config["d_model"]
+        else:
+            raise ValueError(f"Could not find hidden_size field in config for model type: {model_type}")
+
+        # Map num_hidden_layers field
+        if "num_hidden_layers" in hf_config:
+            num_layers = hf_config["num_hidden_layers"]
+        elif "n_layer" in hf_config:  # GPT-2, DialoGPT
+            num_layers = hf_config["n_layer"]
+        elif "num_layers" in hf_config:  # Some models
+            num_layers = hf_config["num_layers"]
+        else:
+            raise ValueError(f"Could not find num_hidden_layers field in config for model type: {model_type}")
+
+        # Map num_attention_heads field
+        if "num_attention_heads" in hf_config:
+            num_heads = hf_config["num_attention_heads"]
+        elif "n_head" in hf_config:  # GPT-2, DialoGPT
+            num_heads = hf_config["n_head"]
+        else:
+            raise ValueError(f"Could not find num_attention_heads field in config for model type: {model_type}")
+
+        # Map max_position_embeddings field
+        if "max_position_embeddings" in hf_config:
+            max_pos_emb = hf_config["max_position_embeddings"]
+        elif "n_positions" in hf_config:  # GPT-2, DialoGPT
+            max_pos_emb = hf_config["n_positions"]
+        elif "n_ctx" in hf_config:  # Alternative GPT-2 field
+            max_pos_emb = hf_config["n_ctx"]
+        else:
+            max_pos_emb = 2048  # Default
+
+        # Set model-specific defaults
+        if model_type == "gpt2":
+            # GPT-2 models (including DialoGPT) tie embeddings by default
+            tie_word_embeddings = hf_config.get("tie_word_embeddings", True)
+        else:
+            tie_word_embeddings = hf_config.get("tie_word_embeddings", False)
+
         return cls(
-            model_type=hf_config.get("model_type", "unknown"),
+            model_type=model_type,
             vocab_size=hf_config["vocab_size"],
-            hidden_size=hf_config["hidden_size"],
-            num_hidden_layers=hf_config["num_hidden_layers"],
-            num_attention_heads=hf_config["num_attention_heads"],
-            intermediate_size=hf_config.get("intermediate_size", hf_config["hidden_size"] * 4),
-            max_position_embeddings=hf_config.get("max_position_embeddings", 2048),
+            hidden_size=hidden_size,
+            num_hidden_layers=num_layers,
+            num_attention_heads=num_heads,
+            intermediate_size=hf_config.get("intermediate_size", hf_config.get("n_inner", hidden_size * 4)),
+            max_position_embeddings=max_pos_emb,
             rms_norm_eps=hf_config.get("rms_norm_eps", 1e-6),
-            layer_norm_eps=hf_config.get("layer_norm_eps", 1e-5),
-            tie_word_embeddings=hf_config.get("tie_word_embeddings", False),
+            layer_norm_eps=hf_config.get("layer_norm_eps", hf_config.get("layer_norm_epsilon", 1e-5)),
+            tie_word_embeddings=tie_word_embeddings,
             use_cache=hf_config.get("use_cache", True),
             num_key_value_heads=hf_config.get("num_key_value_heads"),
             rope_theta=hf_config.get("rope_theta", 10000.0),
@@ -68,7 +116,13 @@ class ModelConfig:
         """Load configuration from file."""
         with open(path) as f:
             data = json.load(f)
-        return cls(**data)
+
+        # Filter data to only include fields that our ModelConfig accepts
+        # This allows loading configs with extra fields we don't support
+        valid_fields = set(cls.__dataclass_fields__.keys())
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        return cls(**filtered_data)
 
 
 class BaseModel(ABC):

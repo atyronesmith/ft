@@ -104,12 +104,12 @@ def mock_mlx_model(temp_dir, sample_model_config):
     model_dir = temp_dir / "mlx_model"
     model_dir.mkdir(parents=True)
 
-    # Save config
-    with open(model_dir / "config.json", "w") as f:
+    # Save config in MLX format
+    with open(model_dir / "mlx_config.json", "w") as f:
         json.dump(sample_model_config, f)
 
-    # Create mock weight file
-    (model_dir / "model.safetensors").touch()
+    # Create mock MLX weight file
+    (model_dir / "mlx_model.safetensors").touch()
 
     return model_dir
 

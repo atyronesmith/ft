@@ -306,6 +306,78 @@ if MLX_AVAILABLE:
             """Get LoRA parameters for training."""
             return get_lora_trainable_params(self)
 
+    class GPTTransformerBlock(nn.Module):
+        """GPT-2 style transformer block with proper parameter naming."""
+
+        def __init__(self, config: ModelConfig):
+            super().__init__()
+
+            # Layer norms (GPT uses LayerNorm, not RMSNorm)
+            self.ln_1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+            self.ln_2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
+            # Attention with combined qkv projection (like GPT-2)
+            self.attn = GPTAttention(config)
+
+            # MLP
+            self.mlp = GPTMLP(config)
+
+        def __call__(self, x: mx.array) -> mx.array:
+            # GPT-2 style: prenorm
+            h = x + self.attn(self.ln_1(x))
+            h = h + self.mlp(self.ln_2(h))
+            return h
+
+    class GPTAttention(nn.Module):
+        """GPT-2 style attention with combined qkv projection."""
+
+        def __init__(self, config: ModelConfig):
+            super().__init__()
+            self.hidden_size = config.hidden_size
+            self.num_heads = config.num_attention_heads
+            self.head_dim = self.hidden_size // self.num_heads
+
+            # Combined q,k,v projection (like GPT-2 c_attn)
+            self.c_attn = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=True)
+            self.c_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+
+        def __call__(self, x: mx.array) -> mx.array:
+            B, L, D = x.shape
+
+            # Project to q, k, v
+            qkv = self.c_attn(x)
+            q, k, v = mx.split(qkv, 3, axis=-1)
+
+            # Reshape for multi-head attention
+            q = q.reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+            k = k.reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+            v = v.reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+
+            # Attention
+            scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) / mx.sqrt(self.head_dim)
+
+            # Causal mask
+            mask = mx.triu(mx.ones((L, L)), k=1) * -1e9
+            scores = scores + mask
+
+            attn = mx.softmax(scores, axis=-1)
+            out = mx.matmul(attn, v)
+
+            # Reshape and project
+            out = out.transpose(0, 2, 1, 3).reshape(B, L, D)
+            return self.c_proj(out)
+
+    class GPTMLP(nn.Module):
+        """GPT-2 style MLP."""
+
+        def __init__(self, config: ModelConfig):
+            super().__init__()
+            self.c_fc = nn.Linear(config.hidden_size, config.intermediate_size, bias=True)
+            self.c_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=True)
+
+        def __call__(self, x: mx.array) -> mx.array:
+            return self.c_proj(nn.gelu(self.c_fc(x)))
+
     class MLXGPTModel(nn.Module, BaseModel):
         """GPT-2 style model implementation in MLX."""
 
@@ -318,10 +390,9 @@ if MLX_AVAILABLE:
                 config.max_position_embeddings, config.hidden_size
             )  # Position embeddings
 
-            # Transformer blocks (using LayerNorm instead of RMSNorm for GPT)
-            self.blocks = []
-            for _ in range(config.num_hidden_layers):
-                self.blocks.append(self._make_gpt_block(config))
+            # Create transformer blocks using the same pattern as MLXLlamaModel
+            # Use a simple list - MLX will handle parameter registration automatically
+            self.layers = [GPTTransformerBlock(config) for _ in range(config.num_hidden_layers)]
 
             self.ln_f = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
@@ -333,9 +404,7 @@ if MLX_AVAILABLE:
 
         def _make_gpt_block(self, config: ModelConfig) -> nn.Module:
             """Create a GPT-style transformer block."""
-            # GPT uses LayerNorm and different architecture
-            # This is simplified - full implementation would be more complex
-            return TransformerBlock(config)  # Reusing for now
+            return GPTTransformerBlock(config)
 
         def forward(self, input_ids: mx.array, **kwargs) -> mx.array:
             """Forward pass through GPT model."""
@@ -349,8 +418,8 @@ if MLX_AVAILABLE:
             h = token_embeddings + position_embeddings
 
             # Pass through transformer blocks
-            for block in self.blocks:
-                h = block(h)
+            for i, layer in enumerate(self.layers):
+                h = layer(h)
 
             # Final layer norm
             h = self.ln_f(h)
@@ -362,6 +431,51 @@ if MLX_AVAILABLE:
                 logits = h @ self.wte.weight.T
 
             return logits
+
+        def update(self, parameters: dict):
+            """Custom update method to handle list-based layers."""
+            # Handle top-level parameters normally
+            top_level_params = {}
+            layer_params = {}
+
+            for key, value in parameters.items():
+                if key.startswith('layers.'):
+                    # Extract layer index and parameter path
+                    parts = key.split('.', 2)  # ['layers', '0', 'attn.c_attn.weight']
+                    layer_idx = int(parts[1])
+                    param_path = parts[2]
+
+                    if layer_idx not in layer_params:
+                        layer_params[layer_idx] = {}
+
+                    # Rebuild nested structure for this layer
+                    current = layer_params[layer_idx]
+                    path_parts = param_path.split('.')
+                    for part in path_parts[:-1]:
+                        if part not in current:
+                            current[part] = {}
+                        current = current[part]
+                    current[path_parts[-1]] = value
+                else:
+                    # Handle nested top-level parameters
+                    if '.' in key:
+                        parts = key.split('.')
+                        current = top_level_params
+                        for part in parts[:-1]:
+                            if part not in current:
+                                current[part] = {}
+                            current = current[part]
+                        current[parts[-1]] = value
+                    else:
+                        top_level_params[key] = value
+
+            # Update top-level parameters using parent method
+            super().update(top_level_params)
+
+            # Update each layer individually
+            for layer_idx, layer_weights in layer_params.items():
+                if layer_idx < len(self.layers):
+                    self.layers[layer_idx].update(layer_weights)
 
         def generate(self, input_ids: mx.array, max_length: int = 100, **kwargs) -> mx.array:
             """Generate text (simplified version)."""
@@ -403,15 +517,35 @@ if MLX_AVAILABLE:
             """Get LoRA parameters for training."""
             return get_lora_trainable_params(self)
 
-    # Model registry when MLX is available
+    # Model registry for Hugging Face transformer architectures
+    # Focused on decoder-only models (most popular for fine-tuning)
     MLX_MODEL_REGISTRY = {
+        # Llama family (Meta's models + derivatives)
         "llama": MLXLlamaModel,
         "llama2": MLXLlamaModel,
         "llama3": MLXLlamaModel,
-        "mistral": MLXLlamaModel,  # Similar architecture
+        "code_llama": MLXLlamaModel,
+
+        # Mistral family (Mistral AI)
+        "mistral": MLXLlamaModel,  # Same architecture as Llama
+        "mixtral": MLXLlamaModel,  # MoE version, same base structure
+
+        # Google models
+        "gemma": MLXLlamaModel,  # Similar to Llama architecture
+
+        # GPT family (OpenAI + derivatives)
         "gpt2": MLXGPTModel,
         "gpt-j": MLXGPTModel,
         "gpt-neo": MLXGPTModel,
+        "gpt-neox": MLXGPTModel,
+
+        # Microsoft models
+        "phi": MLXGPTModel,  # Phi-2, Phi-3 series
+        "dialoGPT": MLXGPTModel,  # Our current test case
+
+        # Other popular decoder-only models
+        "falcon": MLXLlamaModel,  # Similar architecture
+        "qwen": MLXLlamaModel,    # Alibaba's model, similar architecture
     }
 
     def get_mlx_model(config: ModelConfig) -> BaseModel:

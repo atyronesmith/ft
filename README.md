@@ -99,6 +99,47 @@ make lint             # Run all linters
 make format          # Format code with black
 ```
 
+### Real Model Integration Testing
+
+The middle ground integration test loads actual HuggingFace models and validates end-to-end fine-tuning with measurable success criteria:
+
+```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Run real model integration test (basic)
+FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model
+
+# Run with verbose step-by-step output (recommended for debugging)
+FT_REAL_MODEL_ENABLE=1 FT_VERBOSE=1 make test-e2e-real-model
+
+# Or run directly with pytest to see all output
+FT_REAL_MODEL_ENABLE=1 FT_VERBOSE=1 pytest tests/integration/test_end_to_end_real_model.py -v -s
+```
+
+#### What the Test Does:
+- **Loads real models**: Downloads and converts HuggingFace models (DistilGPT2, microsoft/DialoGPT-small)
+- **Resource optimization**: Automatically selects optimal config based on available memory
+- **Deterministic training**: Uses structured Q&A dataset with geography, math, and pattern completion
+- **Measurable validation**: Tests 4 objective success criteria:
+  1. **Loss convergence**: Training loss decreases meaningfully
+  2. **Model learning**: Improved responses on test questions
+  3. **Memory efficiency**: LoRA provides 30%+ memory savings
+  4. **Training artifacts**: Output files and logs are created
+
+#### Verbose Output Features:
+- 🎯 **Configuration optimization** with memory detection
+- 📊 **Dataset generation** with category breakdown
+- 🚀 **Model loading progress** with parameter counts
+- 🔄 **Training execution** with loss tracking
+- ✅ **Success validation** with detailed pass/fail status
+- 🎉 **Comprehensive summary** with efficiency metrics
+
+#### Environment Variables:
+- `FT_REAL_MODEL_ENABLE=1` - Enable real model testing (required)
+- `FT_VERBOSE=1` - Enable detailed step-by-step output
+- `FT_TEST_MODEL` - Override test model (default: microsoft/DialoGPT-small)
+
 ## Project Structure
 
 ```

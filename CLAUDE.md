@@ -126,12 +126,24 @@ source .venv/bin/activate
 
 # Run tests (227 tests passing, 65% coverage)
 make test             # All tests with coverage (recommended)
+make test-unit        # Unit tests only
 make test-integration # Integration tests only
-make test-data        # Data loading tests (21 tests)
-make test-config      # Configuration tests (34 tests)
-make test-lora        # LoRA tests (16 tests)
 
-# Legacy quick tests (still available)
+# Component-specific testing
+make test-lora        # LoRA implementation tests (16 tests)
+make test-data        # Data loading tests (21 tests)
+make test-templates   # Template tests (23 tests)
+make test-config      # Configuration tests (34 tests)
+make test-week2       # Data pipeline & configuration (78 tests)
+
+# End-to-end integration testing
+make test-e2e-workflow      # Workflow integration (mocked, fast)
+make test-e2e-real-model    # Real model integration (requires FT_REAL_MODEL_ENABLE=1)
+make test-e2e-ollama        # Full Ollama pipeline (requires FT_E2E_ENABLE=1)
+make test-e2e-quick         # Quick E2E validation (workflow + real model)
+make test-e2e-all           # All E2E tests (comprehensive)
+
+# Quick functionality tests (legacy)
 make test-week2-quick # Quick Week 2 functionality test
 make test-lora-quick  # Quick LoRA functionality test
 

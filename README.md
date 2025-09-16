@@ -79,9 +79,20 @@ ft train start microsoft/DialoGPT-small data/training.json \
 ft train validate configs/production.yml
 
 # Development and testing
-make test              # Unit tests only
+make test              # All tests with coverage (227 tests)
+make test-unit         # Unit tests only
 make test-integration  # Integration tests
-make test-all         # All tests with coverage
+make test-e2e-quick    # End-to-end validation (recommended)
+
+# Component-specific testing
+make test-lora         # LoRA implementation tests
+make test-data         # Data loading tests
+make test-config       # Configuration tests
+make test-e2e-workflow # Workflow integration (mocked)
+
+# Advanced end-to-end testing (requires environment flags)
+FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model  # Real model integration
+FT_E2E_ENABLE=1 make test-e2e-ollama             # Full Ollama pipeline
 
 # Code quality
 make lint             # Run all linters

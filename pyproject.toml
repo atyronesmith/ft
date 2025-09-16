@@ -181,6 +181,7 @@ markers = [
     "requires_mlx: marks tests as requiring MLX (deselect with '-m \"not requires_mlx\"')",
     "requires_torch: marks tests as requiring PyTorch (deselect with '-m \"not requires_torch\"')",
     "requires_transformers: marks tests as requiring Transformers (deselect with '-m \"not requires_transformers\"')",
+    "requires_real_model: marks tests as requiring real model loading (deselect with '-m \"not requires_real_model\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",

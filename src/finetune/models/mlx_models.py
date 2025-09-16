@@ -517,6 +517,20 @@ if MLX_AVAILABLE:
             """Get LoRA parameters for training."""
             return get_lora_trainable_params(self)
 
+        def named_parameters(self):
+            """Return named parameters for training compatibility."""
+            # Convert MLX parameters() dict to named tuples like PyTorch
+            params = []
+            def collect_params(param_dict, prefix=""):
+                for name, value in param_dict.items():
+                    if isinstance(value, dict):
+                        collect_params(value, f"{prefix}{name}.")
+                    elif hasattr(value, 'shape'):  # MLX array
+                        params.append((f"{prefix}{name}".rstrip('.'), value))
+
+            collect_params(self.parameters())
+            return params
+
     # Model registry for Hugging Face transformer architectures
     # Focused on decoder-only models (most popular for fine-tuning)
     MLX_MODEL_REGISTRY = {

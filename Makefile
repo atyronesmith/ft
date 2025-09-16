@@ -16,14 +16,14 @@ help: ## Show this help message
 	@echo "$(BLUE)FineTune Development Commands$(NC)"
 	@echo ""
 	@echo "$(BLUE)🚀 Quick Start:$(NC) make dev && make test-week2-quick"
-	@echo "$(BLUE)📋 Common:$(NC) make test-week2 | make test-lora | make format | make clean"
+	@echo "$(BLUE)📋 Common:$(NC) make test-week2 | make test-lora | make test-e2e-quick | make format"
 	@echo ""
 	@echo "$(YELLOW)📦 Environment & Setup$(NC)"
 	@grep -E '^(poetry-check|install|dev|install-all|update|lock|shell|init|create-dirs):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🧪 Testing$(NC)"
-	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-ollama|test-e2e-all|test-e2e-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🔍 Code Quality$(NC)"
@@ -155,6 +155,58 @@ test-week2-quick: ## Run quick Week 2 functionality test
 	@echo "$(BLUE)Running quick Week 2 integration test...$(NC)"
 	@PYTHONPATH=src .venv/bin/python -c "from finetune.data import DatasetLoader, AlpacaTemplate, TemplateRegistry; from finetune.config import TrainingConfig, ModelConfig, DataConfig, ConfigProfile; print('✅ Data loading, templates, and config systems operational')"
 	@echo "$(GREEN)✅ Quick Week 2 test passed!$(NC)"
+
+# End-to-End Integration Tests
+test-e2e-workflow: ## Run end-to-end workflow integration test (mocked components)
+	@echo "$(BLUE)Running end-to-end workflow integration test...$(NC)"
+	@echo "$(YELLOW)Testing component integration with mocked dependencies...$(NC)"
+	PYTHONPATH=src .venv/bin/python -m pytest tests/integration/test_end_to_end_workflow.py -v --color=yes
+	@echo "$(GREEN)✅ End-to-end workflow test completed!$(NC)"
+
+test-e2e-real-model: ## Run real model integration test (requires FT_REAL_MODEL_ENABLE=1)
+	@echo "$(BLUE)Running real model integration test...$(NC)"
+	@echo "$(YELLOW)Testing with actual HuggingFace models and measurable success criteria...$(NC)"
+	@if [ "$(FT_REAL_MODEL_ENABLE)" = "1" ]; then \
+		echo "$(GREEN)Real model testing enabled$(NC)"; \
+		PYTHONPATH=src FT_REAL_MODEL_ENABLE=1 .venv/bin/python -m pytest tests/integration/test_end_to_end_real_model.py -v --color=yes; \
+	else \
+		echo "$(YELLOW)Real model testing disabled. Set FT_REAL_MODEL_ENABLE=1 to enable.$(NC)"; \
+		echo "$(YELLOW)Usage: FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model$(NC)"; \
+	fi
+	@echo "$(GREEN)✅ Real model integration test completed!$(NC)"
+
+test-e2e-ollama: ## Run full Ollama deployment test (requires FT_E2E_ENABLE=1)
+	@echo "$(BLUE)Running Ollama end-to-end deployment test...$(NC)"
+	@echo "$(YELLOW)Testing complete pipeline: model → fine-tune → Ollama → evaluation...$(NC)"
+	@if [ "$(FT_E2E_ENABLE)" = "1" ]; then \
+		echo "$(GREEN)Ollama E2E testing enabled$(NC)"; \
+		PYTHONPATH=src FT_E2E_ENABLE=1 .venv/bin/python -m pytest tests/integration/test_end_to_end_ollama.py -v --color=yes; \
+	else \
+		echo "$(YELLOW)Ollama E2E testing disabled. Set FT_E2E_ENABLE=1 to enable.$(NC)"; \
+		echo "$(YELLOW)Usage: FT_E2E_ENABLE=1 make test-e2e-ollama$(NC)"; \
+		echo "$(YELLOW)Note: Requires ollama CLI and network access$(NC)"; \
+	fi
+	@echo "$(GREEN)✅ Ollama end-to-end test completed!$(NC)"
+
+test-e2e-all: ## Run all end-to-end tests (workflow + real model + Ollama)
+	@echo "$(BLUE)Running all end-to-end integration tests...$(NC)"
+	@echo "$(YELLOW)1/3: Workflow integration (fast, mocked)...$(NC)"
+	@$(MAKE) test-e2e-workflow
+	@echo ""
+	@echo "$(YELLOW)2/3: Real model integration (medium, requires models)...$(NC)"
+	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
+	@echo ""
+	@echo "$(YELLOW)3/3: Ollama deployment (slow, requires external tools)...$(NC)"
+	@FT_E2E_ENABLE=1 $(MAKE) test-e2e-ollama
+	@echo ""
+	@echo "$(GREEN)🎉 All end-to-end tests completed successfully!$(NC)"
+
+test-e2e-quick: ## Run quick end-to-end validation (workflow + real model, no Ollama)
+	@echo "$(BLUE)Running quick end-to-end validation...$(NC)"
+	@echo "$(YELLOW)Testing workflow integration and real model loading...$(NC)"
+	@$(MAKE) test-e2e-workflow
+	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
+	@echo "$(GREEN)✅ Quick end-to-end validation completed!$(NC)"
 
 lint: ## Run linting checks
 	@echo "$(BLUE)Running linters...$(NC)"

@@ -305,14 +305,17 @@ def _generate_answer_fixed(model, tokenizer, template, question: str, max_tokens
                     # Keep at least 1 token to avoid empty distribution
                     cutoff_idx = max(1, cutoff_idx)
 
-                    # Zero out probabilities beyond the cutoff
-                    filtered_probs = mx.zeros_like(probs)
-                    valid_indices = sorted_indices[:cutoff_idx]
-                    filtered_probs = filtered_probs.at[valid_indices].set(sorted_probs[:cutoff_idx])
+                    # Zero out probabilities beyond the cutoff (simple approach)
+                    # Keep only the top-p tokens by setting others to very small values
+                    probs_copy = mx.array(probs)  # Make a copy
+                    for i in range(len(sorted_indices)):
+                        if i >= cutoff_idx:
+                            idx = int(sorted_indices[i])
+                            # Set low-probability tokens to near zero
+                            probs_copy = mx.where(mx.arange(len(probs)) == idx, mx.array(1e-10), probs_copy)
 
                     # Renormalize the filtered probabilities
-                    filtered_probs = filtered_probs / mx.sum(filtered_probs)
-                    probs = filtered_probs
+                    probs = probs_copy / mx.sum(probs_copy)
 
             # Sample from the filtered probability distribution
             next_token_id = int(mx.random.categorical(mx.log(probs + 1e-8)))  # Add epsilon for numerical stability

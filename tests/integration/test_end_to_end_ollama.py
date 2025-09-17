@@ -240,13 +240,10 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
 
 
 def _generate_answer_fixed(model, tokenizer, template, question: str, max_tokens: int = 50) -> str:
-    """Generate an answer using modern temperature + top-p (nucleus) sampling.
+    """Generate an answer using temperature sampling.
 
-    Implements state-of-the-art text generation combining:
-    - Temperature sampling (0.7): Balances creativity vs determinism
-    - Top-p sampling (0.9): Eliminates nonsensical low-probability tokens
-
-    This matches the quality of modern LLMs like Ollama, GPT, etc.
+    Uses temperature sampling (0.7) instead of greedy decoding to avoid
+    repetitive loops and get more natural, coherent responses.
     """
     import mlx.core as mx
 
@@ -269,56 +266,25 @@ def _generate_answer_fixed(model, tokenizer, template, question: str, max_tokens
         # Convert to MLX array
         input_tensor = mx.array(input_ids).reshape(1, -1)
 
-        # Generate tokens one by one (temperature + top-p sampling like modern LLMs)
+        # Generate tokens one by one (temperature sampling)
         generated_ids = input_tensor
         generated_tokens = []
         temperature = 0.7  # Good balance: deterministic enough for facts, creative enough to avoid loops
-        top_p = 0.9  # Nucleus sampling: only consider top 90% probability mass
 
         for step in range(max_tokens):
             # Forward pass
             logits = model.forward(generated_ids)
             mx.eval(logits)
 
-            # Get next token (modern sampling: temperature + top-p)
+            # Get next token (temperature sampling)
             next_token_logits = logits[0, -1, :]
 
             # Apply temperature scaling to logits
             scaled_logits = next_token_logits / temperature
 
-            # Convert to probabilities
+            # Sample from the probability distribution
             probs = mx.softmax(scaled_logits, axis=-1)
-
-            # Apply top-p (nucleus) sampling to cut out nonsensical tokens
-            if top_p < 1.0:
-                # Sort probabilities in descending order
-                sorted_indices = mx.argsort(-probs)  # Negative for descending order
-                sorted_probs = probs[sorted_indices]
-
-                # Find cumulative probabilities
-                cumsum_probs = mx.cumsum(sorted_probs, axis=0)
-
-                # Find cutoff index where cumsum > top_p
-                cutoff_mask = cumsum_probs > top_p
-                if mx.any(cutoff_mask):
-                    cutoff_idx = int(mx.argmax(cutoff_mask.astype(mx.float32)))
-                    # Keep at least 1 token to avoid empty distribution
-                    cutoff_idx = max(1, cutoff_idx)
-
-                    # Zero out probabilities beyond the cutoff (simple approach)
-                    # Keep only the top-p tokens by setting others to very small values
-                    probs_copy = mx.array(probs)  # Make a copy
-                    for i in range(len(sorted_indices)):
-                        if i >= cutoff_idx:
-                            idx = int(sorted_indices[i])
-                            # Set low-probability tokens to near zero
-                            probs_copy = mx.where(mx.arange(len(probs)) == idx, mx.array(1e-10), probs_copy)
-
-                    # Renormalize the filtered probabilities
-                    probs = probs_copy / mx.sum(probs_copy)
-
-            # Sample from the filtered probability distribution
-            next_token_id = int(mx.random.categorical(mx.log(probs + 1e-8)))  # Add epsilon for numerical stability
+            next_token_id = int(mx.random.categorical(mx.log(probs)))
 
             # Debug: Show what token we're generating
             try:

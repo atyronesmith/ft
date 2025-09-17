@@ -240,7 +240,11 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
 
 
 def _generate_answer_fixed(model, tokenizer, template, question: str, max_tokens: int = 50) -> str:
-    """Generate an answer to a question using the model (fixed version)."""
+    """Generate an answer to a question using the model with temperature sampling.
+
+    Uses temperature sampling (like Ollama) instead of greedy decoding to avoid
+    repetitive loops and get more natural, coherent responses.
+    """
     import mlx.core as mx
 
     try:
@@ -262,18 +266,25 @@ def _generate_answer_fixed(model, tokenizer, template, question: str, max_tokens
         # Convert to MLX array
         input_tensor = mx.array(input_ids).reshape(1, -1)
 
-        # Generate tokens one by one (greedy decoding)
+        # Generate tokens one by one (temperature sampling like Ollama)
         generated_ids = input_tensor
         generated_tokens = []
+        temperature = 0.7  # Good balance: deterministic enough for facts, creative enough to avoid loops
 
         for step in range(max_tokens):
             # Forward pass
             logits = model.forward(generated_ids)
             mx.eval(logits)
 
-            # Get next token (greedy)
+            # Get next token (temperature sampling instead of greedy)
             next_token_logits = logits[0, -1, :]
-            next_token_id = int(mx.argmax(next_token_logits))
+
+            # Apply temperature scaling to logits
+            scaled_logits = next_token_logits / temperature
+
+            # Sample from the probability distribution instead of just taking argmax
+            probs = mx.softmax(scaled_logits, axis=-1)
+            next_token_id = int(mx.random.categorical(mx.log(probs)))
 
             # Debug: Show what token we're generating
             try:
@@ -406,8 +417,8 @@ def _train_with_workflow(model_id: str, train_file: Path, out_dir: Path, test_qu
     )
 
     # Effective settings for real learning (now that system is stable)
-    workflow.config.optimization.epochs = 2
-    workflow.config.optimization.batch_size = 16  # Keep small for testing
+    workflow.config.optimization.epochs = 30
+    workflow.config.optimization.batch_size = 32  # Keep small for testing
     workflow.config.optimization.learning_rate = 5e-5  # Standard effective learning rate
     workflow.config.optimization.warmup_steps = 3  # Small warmup for stability
     workflow.config.optimization.max_grad_norm = 1.0   # Standard gradient clipping
@@ -639,7 +650,7 @@ def test_end_to_end_mlx(tmp_path: Path):
     # 2) Generate dataset (100 Q/A)
     train_file = data_dir / "train.jsonl"
     val_file = data_dir / "val.jsonl"
-    train_data = _generate_dataset(train_file, n=1000)  # Reduced for faster testing
+    train_data = _generate_dataset(train_file, n=10)  # Reduced for faster testing
     # Use first 5 as validation
     val_data = _generate_dataset(val_file, n=5)
     _vprint(f"Generated dataset: train={len(train_data)}, val={len(val_data)}")

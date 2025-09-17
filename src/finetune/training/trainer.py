@@ -175,15 +175,29 @@ class LoRATrainer:
         zero = mx.array(0, dtype=mx.int32)
         labels = mx.minimum(mx.maximum(labels, zero), max_label)
 
-        # Cross-entropy loss
-        per_token = nn.losses.cross_entropy(logits, labels, reduction="none")
-        if mask is not None:
-            mask = mask.astype(mx.float32)
-            masked_sum = mx.sum(per_token * mask)
-            denom = mx.sum(mask) + 1e-6
-            loss = masked_sum / denom
+        # Cross-entropy loss with proper ignore index handling
+        # Use a simpler approach that avoids MLX boolean indexing issues
+
+        # Replace -100 with a valid label temporarily for loss computation
+        ignore_index = -100
+        temp_labels = mx.where(labels == ignore_index, mx.array(0, dtype=labels.dtype), labels)
+
+        # Ensure labels are in valid range [0, vocab_size-1]
+        temp_labels = mx.clip(temp_labels, 0, logits.shape[-1] - 1)
+
+        # Compute cross-entropy for all tokens
+        per_token_loss = nn.losses.cross_entropy(logits, temp_labels, reduction="none")
+
+        # Create mask for valid tokens (not ignore_index) using safe operations
+        valid_mask = (labels != ignore_index).astype(mx.float32)
+
+        # Mask out ignored tokens and compute average
+        if mx.sum(valid_mask) > 0:
+            masked_loss = per_token_loss * valid_mask
+            loss = mx.sum(masked_loss) / mx.sum(valid_mask)
         else:
-            loss = mx.mean(per_token)
+            # If no valid labels, return a small positive loss to avoid NaN
+            loss = mx.array(0.01, dtype=mx.float32)
 
         return loss
 
@@ -194,6 +208,24 @@ class LoRATrainer:
             return self.compute_loss(batch_)
 
         loss, grads = mx.value_and_grad(loss_fn)(self.model, batch)
+
+        # Check for NaN/Inf in loss and gradients before proceeding
+        if mx.isnan(loss) or mx.isinf(loss):
+            raise ValueError(f"Loss became NaN/Inf: {float(loss)}")
+
+        # Check gradients for NaN/Inf
+        def check_grads_valid(g, path=""):
+            if isinstance(g, dict):
+                for k, v in g.items():
+                    check_grads_valid(v, f"{path}.{k}")
+            elif isinstance(g, list):
+                for i, v in enumerate(g):
+                    check_grads_valid(v, f"{path}[{i}]")
+            elif hasattr(g, 'shape'):
+                if mx.any(mx.isnan(g)) or mx.any(mx.isinf(g)):
+                    raise ValueError(f"Gradient NaN/Inf detected at {path}")
+
+        check_grads_valid(grads, "grads")
 
         # Clip gradients (manual global-norm clipping, MLX has no clip_grad_norm)
         if self.training_config.max_grad_norm > 0:
@@ -234,6 +266,21 @@ class LoRATrainer:
         self.optimizer.learning_rate = lr
 
         mx.eval(self.model.parameters())
+
+        # Validate parameters after update to catch corruption early
+        def check_params_valid(params, path=""):
+            if isinstance(params, dict):
+                for k, v in params.items():
+                    check_params_valid(v, f"{path}.{k}")
+            elif isinstance(params, list):
+                for i, v in enumerate(params):
+                    if hasattr(v, 'parameters'):
+                        check_params_valid(v.parameters(), f"{path}[{i}]")
+            elif hasattr(params, 'shape'):
+                if mx.any(mx.isnan(params)) or mx.any(mx.isinf(params)):
+                    raise ValueError(f"Parameter corruption detected at {path} after optimizer update")
+
+        check_params_valid(self.model.parameters(), "model")
 
         return {"loss": float(loss), "learning_rate": lr}
 

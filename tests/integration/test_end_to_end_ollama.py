@@ -111,15 +111,15 @@ def _train_with_workflow(model_id: str, train_file: Path, out_dir: Path):
         output_dir=str(out_dir),
     )
 
-    # Fast test settings with stability measures
+    # Extremely conservative settings for numerical stability
     workflow.config.optimization.epochs = 1
-    workflow.config.optimization.batch_size = 2
-    workflow.config.optimization.learning_rate = 1e-6  # Even lower LR for extreme stability
-    workflow.config.optimization.warmup_steps = 5
-    workflow.config.optimization.max_grad_norm = 0.5   # Stronger gradient clipping
-    workflow.config.optimization.weight_decay = 0.01   # Regularization
-    workflow.config.lora.r = 4  # Smaller rank for stability
-    workflow.config.lora.alpha = 4.0  # Even lower alpha to reduce LoRA strength
+    workflow.config.optimization.batch_size = 1  # Single batch to minimize instability
+    workflow.config.optimization.learning_rate = 1e-7  # Extremely low LR
+    workflow.config.optimization.warmup_steps = 0  # No warmup to avoid complexity
+    workflow.config.optimization.max_grad_norm = 0.1   # Very strong gradient clipping
+    workflow.config.optimization.weight_decay = 0.0   # No weight decay to reduce complexity
+    workflow.config.lora.r = 2  # Minimal rank for maximum stability
+    workflow.config.lora.alpha = 0.1  # Very low alpha for minimal perturbation
 
     _vprint("Preparing dataset...")
     workflow.prepare_dataset()

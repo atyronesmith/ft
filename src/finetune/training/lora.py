@@ -73,10 +73,12 @@ class LoRALinear(nn.Module):
         self.base = nn.Linear(in_features, out_features, bias=bias)
         self.base.freeze()
 
-        # LoRA parameters
+        # LoRA parameters with more conservative initialization
+        # Use smaller scale to prevent exploding gradients
+        init_scale = 0.01 / math.sqrt(config.r)  # Much smaller initialization
         self.lora_a = mx.random.normal(
             shape=(config.r, in_features),
-            scale=1.0 / math.sqrt(config.r)
+            scale=init_scale
         )
         self.lora_b = mx.zeros((out_features, config.r))
 

@@ -24,22 +24,22 @@ from finetune.training.lora import (
 @dataclass
 class TrainingConfig:
     """Configuration for training."""
-    learning_rate: float = 5e-5
+    learning_rate: float = 1e-5  # Lower rate for naturally stable gradients
     num_epochs: int = 3
     batch_size: int = 4
     gradient_accumulation_steps: int = 1
-    warmup_steps: int = 100
-    max_grad_norm: float = 1.0
+    warmup_steps: int = 50  # Reduced warmup for faster convergence in tests
+    max_grad_norm: float = 1.0  # Standard gradient clipping threshold
     weight_decay: float = 0.01
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
-    adam_epsilon: float = 1e-8
+    adam_epsilon: float = 1e-6  # Increased for numerical stability
     save_steps: int = 500
     eval_steps: int = 100
     logging_steps: int = 10
     output_dir: str = "./output"
     gradient_checkpointing: bool = False
-    mixed_precision: bool = True
+    mixed_precision: bool = False  # Disabled to prevent float16 overflow causing NaN
     seed: int = 42
 
 
@@ -107,12 +107,12 @@ class LoRATrainer:
             )
         else:
             # Cosine decay
-            progress = (self.global_step - self.training_config.warmup_steps) / (
-                self.total_steps - self.training_config.warmup_steps
-            )
+            # Add epsilon to prevent division by zero if total_steps == warmup_steps
+            denominator = self.total_steps - self.training_config.warmup_steps
+            progress = (self.global_step - self.training_config.warmup_steps) / (denominator + 1e-8)
             return self.training_config.learning_rate * 0.5 * (1 + math.cos(math.pi * progress))
 
-    def compute_loss(self, batch: dict[str, mx.array]) -> mx.array:
+    def compute_loss(self, model: BaseModel, batch: dict[str, mx.array]) -> mx.array:
         """Compute loss for a batch."""
         input_ids = batch["input_ids"]
         labels = batch.get("labels", input_ids)
@@ -129,7 +129,7 @@ class LoRATrainer:
         # Forward pass
         # Ensure token ids are int32 for embedding indexing
         input_ids = input_ids.astype(mx.int32)
-        logits = self.model.forward(input_ids)
+        logits = model.forward(input_ids)
         logits = logits.astype(mx.float32)
 
         # Check for NaN in logits after forward pass
@@ -168,7 +168,7 @@ class LoRATrainer:
         # Labels to correct dtype and range
         labels = labels.astype(mx.int32)
         try:
-            vocab_limit = int(getattr(getattr(self.model, "config", object()), "vocab_size", logits.shape[-1]))
+            vocab_limit = int(getattr(getattr(model, "config", object()), "vocab_size", logits.shape[-1]))
         except Exception:
             vocab_limit = logits.shape[-1]
         max_label = mx.array(vocab_limit - 1, dtype=mx.int32)
@@ -205,7 +205,7 @@ class LoRATrainer:
         """Perform a single training step."""
         # Compute loss and gradients (MLX: use mx.value_and_grad with (model, batch))
         def loss_fn(model: BaseModel, batch_: dict[str, mx.array]) -> mx.array:
-            return self.compute_loss(batch_)
+            return self.compute_loss(model, batch_)
 
         loss, grads = mx.value_and_grad(loss_fn)(self.model, batch)
 
@@ -254,15 +254,28 @@ class LoRATrainer:
                 return x
 
             gn = global_norm(grads)
+            # Log gradient norm for monitoring training stability
+            if self.global_step % self.training_config.logging_steps == 0:
+                if gn <= self.training_config.max_grad_norm:
+                    logger.debug(f"Step {self.global_step}: ✅ Stable gradient norm = {gn:.4f} (no clipping needed)")
+                else:
+                    logger.debug(f"Step {self.global_step}: ⚠️  High gradient norm = {gn:.4f} (clipping required)")
+
             if gn > self.training_config.max_grad_norm:
                 scale = self.training_config.max_grad_norm / (gn + 1e-6)
                 grads = scale_tree(grads, scale)
+                # Log clipping events less frequently to reduce noise
+                if self.global_step % (self.training_config.logging_steps * 5) == 0:
+                    logger.info(f"Step {self.global_step}: Clipped gradient norm from {gn:.4f} to {self.training_config.max_grad_norm}")
+            elif gn > 5.0:  # Warn about moderately high gradients
+                if self.global_step % self.training_config.logging_steps == 0:
+                    logger.warning(f"Step {self.global_step}: Elevated gradient norm: {gn:.4f}")
 
         # Update parameters
         self.optimizer.update(self.model, grads)
 
-        # Update learning rate (basic constant lr to avoid NaNs with dummy data)
-        lr = self.training_config.learning_rate
+        # Update learning rate using the scheduler (crucial for preventing gradient explosions)
+        lr = self._get_learning_rate()
         self.optimizer.learning_rate = lr
 
         mx.eval(self.model.parameters())
@@ -293,7 +306,7 @@ class LoRATrainer:
         num_batches = 0
 
         for batch in self.eval_dataset:
-            loss = self.compute_loss(batch)
+            loss = self.compute_loss(self.model, batch)
             total_loss += float(loss)
             num_batches += 1
 
@@ -363,61 +376,120 @@ class LoRATrainer:
         logger.info(f"Starting training for {self.training_config.num_epochs} epochs")
         logger.info(f"Total steps: {self.total_steps}")
 
-        for epoch in range(self.training_config.num_epochs):
-            self.epoch = epoch
-            epoch_loss = 0.0
-            num_batches = 0
+        # Set up interrupt handling
+        import signal
+        interrupted = False
 
-            start_time = time.time()
+        def handle_interrupt(signum, frame):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                logger.warning("🛑 Training interrupted by user (Ctrl+C). Finishing current batch and stopping gracefully...")
+                logger.warning("Press Ctrl+C again to force exit immediately.")
+            else:
+                logger.error("💥 Force exit requested. Stopping immediately.")
+                raise KeyboardInterrupt("Force exit")
 
-            for _batch_idx, batch in enumerate(self.train_dataset):
-                # Training step
-                metrics = self.training_step(batch)
-                epoch_loss += metrics["loss"]
-                num_batches += 1
-                self.global_step += 1
+        # Install signal handler
+        original_handler = signal.signal(signal.SIGINT, handle_interrupt)
 
-                # Logging
-                if self.global_step % self.training_config.logging_steps == 0:
-                    avg_loss = epoch_loss / num_batches
-                    elapsed = time.time() - start_time
-                    steps_per_sec = num_batches / elapsed
+        try:
+            for epoch in range(self.training_config.num_epochs):
+                if interrupted:
+                    logger.info(f"Training stopped at epoch {epoch + 1} due to user interrupt")
+                    break
 
-                    logger.info(
-                        f"Epoch {epoch + 1}/{self.training_config.num_epochs} | "
-                        f"Step {self.global_step}/{self.total_steps} | "
-                        f"Loss: {avg_loss:.4f} | "
-                        f"LR: {metrics['learning_rate']:.2e} | "
-                        f"Steps/s: {steps_per_sec:.2f}"
-                    )
+                self.epoch = epoch
+                epoch_loss = 0.0
+                num_batches = 0
 
-                # Evaluation
-                if (
-                    self.training_config.eval_steps > 0
-                    and self.global_step % self.training_config.eval_steps == 0
-                ):
-                    eval_metrics = self.evaluate()
-                    logger.info(f"Evaluation metrics: {eval_metrics}")
+                start_time = time.time()
 
-                    # Save best model
-                    if eval_metrics.get("eval_loss", float("inf")) < self.best_eval_loss:
-                        self.best_eval_loss = eval_metrics["eval_loss"]
-                        self.save_checkpoint(self.output_dir / "best_model")
+                for _batch_idx, batch in enumerate(self.train_dataset):
+                    if interrupted:
+                        logger.info(f"Training stopped at batch {_batch_idx + 1} due to user interrupt")
+                        break
 
-                # Save checkpoint
-                if (
-                    self.training_config.save_steps > 0
-                    and self.global_step % self.training_config.save_steps == 0
-                ):
-                    self.save_checkpoint()
+                    # Training step
+                    metrics = self.training_step(batch)
+                    epoch_loss += metrics["loss"]
+                    num_batches += 1
+                    self.global_step += 1
 
-            # End of epoch
-            avg_epoch_loss = epoch_loss / max(num_batches, 1)
-            logger.info(f"Epoch {epoch + 1} completed. Average loss: {avg_epoch_loss:.4f}")
+                    # Verbose progress logging for each batch step
+                    import os
+                    verbose_mode = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
+                    if verbose_mode:
+                        current_loss = metrics["loss"]
+                        avg_loss = epoch_loss / num_batches
+                        elapsed = time.time() - start_time
+                        steps_per_sec = num_batches / elapsed if elapsed > 0 else 0
 
-        # Final save
-        self.save_checkpoint(self.output_dir / "final_model")
-        logger.info("Training completed!")
+                        logger.info(
+                            f"[VERBOSE] Epoch {epoch + 1}/{self.training_config.num_epochs} | "
+                            f"Step {self.global_step}/{self.total_steps} | "
+                            f"Batch {_batch_idx + 1} | "
+                            f"Current Loss: {current_loss:.4f} | "
+                            f"Avg Loss: {avg_loss:.4f} | "
+                            f"LR: {metrics['learning_rate']:.2e} | "
+                            f"Steps/s: {steps_per_sec:.2f}"
+                        )
+
+                    # Standard logging
+                    if self.global_step % self.training_config.logging_steps == 0:
+                        avg_loss = epoch_loss / num_batches
+                        elapsed = time.time() - start_time
+                        steps_per_sec = num_batches / elapsed
+
+                        logger.info(
+                            f"Epoch {epoch + 1}/{self.training_config.num_epochs} | "
+                            f"Step {self.global_step}/{self.total_steps} | "
+                            f"Loss: {avg_loss:.4f} | "
+                            f"LR: {metrics['learning_rate']:.2e} | "
+                            f"Steps/s: {steps_per_sec:.2f}"
+                        )
+
+                    # Evaluation
+                    if (
+                        self.training_config.eval_steps > 0
+                        and self.global_step % self.training_config.eval_steps == 0
+                    ):
+                        eval_metrics = self.evaluate()
+                        logger.info(f"Evaluation metrics: {eval_metrics}")
+
+                        # Save best model
+                        if eval_metrics.get("eval_loss", float("inf")) < self.best_eval_loss:
+                            self.best_eval_loss = eval_metrics["eval_loss"]
+                            self.save_checkpoint(self.output_dir / "best_model")
+
+                    # Save checkpoint
+                    if (
+                        self.training_config.save_steps > 0
+                        and self.global_step % self.training_config.save_steps == 0
+                    ):
+                        self.save_checkpoint()
+
+                # End of epoch (break out if interrupted)
+                if interrupted:
+                    break
+
+                avg_epoch_loss = epoch_loss / max(num_batches, 1)
+                logger.info(f"Epoch {epoch + 1} completed. Average loss: {avg_epoch_loss:.4f}")
+
+            # Final save (even if interrupted)
+            self.save_checkpoint(self.output_dir / "final_model")
+            if interrupted:
+                logger.info("Training interrupted but checkpoint saved.")
+            else:
+                logger.info("Training completed!")
+
+        except KeyboardInterrupt:
+            # Handle force exit (second Ctrl+C)
+            logger.error("Training force-stopped by user.")
+            raise
+        finally:
+            # Restore original signal handler
+            signal.signal(signal.SIGINT, original_handler)
 
         return self.model
 

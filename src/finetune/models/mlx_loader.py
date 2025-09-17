@@ -196,11 +196,7 @@ class MLXModelLoader(ModelLoader):
         """Convert PyTorch weights to MLX format."""
         import torch
 
-        # Mapping from PyTorch names to MLX names
-        name_map = self._get_name_mapping(model_type)
-
         mlx_weights = {}
-
         is_llama = "llama" in model_type.lower()
 
         for pytorch_name, pytorch_tensor in source_weights.items():
@@ -214,14 +210,14 @@ class MLXModelLoader(ModelLoader):
             else:
                 numpy_array = np.array(pytorch_tensor)
 
-            # Map name
-            if is_llama:
-                # For llama, only load explicitly mapped names to avoid strict update failures
-                if pytorch_name not in name_map:
-                    continue
-                mlx_name = name_map[pytorch_name]
+            # CORRECTED: Apply a general rule for Llama models instead of an incomplete map.
+            # This correctly handles all layers by simply stripping the "model." prefix.
+            if is_llama and pytorch_name.startswith("model."):
+                mlx_name = pytorch_name[len("model."):]
             else:
-                mlx_name = name_map.get(pytorch_name, pytorch_name)
+                # For other models or names that don't start with "model.", use the original name.
+                # This also handles lm_head.weight correctly for Llama.
+                mlx_name = pytorch_name
 
             # Skip unnecessary weights
             if self._should_skip_weight(mlx_name):
@@ -317,17 +313,9 @@ class MLXModelLoader(ModelLoader):
 
     def _handle_special_weights(self, name: str, weight: Any, model_type: str) -> Any:
         """Handle special weight conversions."""
-        # Handle transposed weights for linear layers
-        if any(
-            key in name
-            for key in ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-        ):
-            # PyTorch Linear uses (out_features, in_features)
-            # MLX Linear uses (in_features, out_features)
-            # So we need to transpose
-            if len(weight.shape) == 2:
-                weight = weight.T
-
+        # FIXED: Removed transpose operation that was causing shape mismatch
+        # Modern safetensors weights are already in the correct shape (out_features, in_features)
+        # which is what MLX Linear layers expect. No transpose needed.
         return weight
 
     def _quantize_model(self, model: BaseModel, bits: int = 4) -> BaseModel:

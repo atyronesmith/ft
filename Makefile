@@ -23,7 +23,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🧪 Testing$(NC)"
-	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-ollama|test-e2e-all|test-e2e-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-mlx|test-e2e-all|test-e2e-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🔍 Code Quality$(NC)"
@@ -175,20 +175,21 @@ test-e2e-real-model: ## Run real model integration test (requires FT_REAL_MODEL_
 	fi
 	@echo "$(GREEN)✅ Real model integration test completed!$(NC)"
 
-test-e2e-ollama: ## Run full Ollama deployment test (requires FT_E2E_ENABLE=1)
-	@echo "$(BLUE)Running Ollama end-to-end deployment test...$(NC)"
-	@echo "$(YELLOW)Testing complete pipeline: model → fine-tune → Ollama → evaluation...$(NC)"
+test-e2e-mlx: ## Run end-to-end MLX test (requires FT_E2E_ENABLE=1)
+	@echo "$(BLUE)Running MLX end-to-end test...$(NC)"
+	@echo "$(YELLOW)Testing complete pipeline: model → fine-tune → MLX generation → evaluation...$(NC)"
 	@if [ "$(FT_E2E_ENABLE)" = "1" ]; then \
-		echo "$(GREEN)Ollama E2E testing enabled$(NC)"; \
-		PYTHONPATH=src FT_E2E_ENABLE=1 .venv/bin/python -m pytest tests/integration/test_end_to_end_ollama.py -v --color=yes; \
+		echo "$(GREEN)MLX E2E testing enabled$(NC)"; \
+		OPTS="-v --color=yes"; \
+		if [ "$(FT_E2E_VERBOSE)" = "1" ]; then OPTS="$$OPTS -s"; fi; \
+		PYTHONPATH=src FT_E2E_ENABLE=1 FT_E2E_VERBOSE=$(FT_E2E_VERBOSE) .venv/bin/python -m pytest tests/integration/test_end_to_end_ollama.py $$OPTS; \
 	else \
-		echo "$(YELLOW)Ollama E2E testing disabled. Set FT_E2E_ENABLE=1 to enable.$(NC)"; \
-		echo "$(YELLOW)Usage: FT_E2E_ENABLE=1 make test-e2e-ollama$(NC)"; \
-		echo "$(YELLOW)Note: Requires ollama CLI and network access$(NC)"; \
+		echo "$(YELLOW)MLX E2E testing disabled. Set FT_E2E_ENABLE=1 to enable.$(NC)"; \
+		echo "$(YELLOW)Usage: FT_E2E_ENABLE=1 make test-e2e-mlx$(NC)"; \
 	fi
-	@echo "$(GREEN)✅ Ollama end-to-end test completed!$(NC)"
+	@echo "$(GREEN)✅ MLX end-to-end test completed!$(NC)"
 
-test-e2e-all: ## Run all end-to-end tests (workflow + real model + Ollama)
+test-e2e-all: ## Run all end-to-end tests (workflow + real model + MLX)
 	@echo "$(BLUE)Running all end-to-end integration tests...$(NC)"
 	@echo "$(YELLOW)1/3: Workflow integration (fast, mocked)...$(NC)"
 	@$(MAKE) test-e2e-workflow
@@ -196,8 +197,8 @@ test-e2e-all: ## Run all end-to-end tests (workflow + real model + Ollama)
 	@echo "$(YELLOW)2/3: Real model integration (medium, requires models)...$(NC)"
 	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
 	@echo ""
-	@echo "$(YELLOW)3/3: Ollama deployment (slow, requires external tools)...$(NC)"
-	@FT_E2E_ENABLE=1 $(MAKE) test-e2e-ollama
+	@echo "$(YELLOW)3/3: MLX end-to-end (slow)...$(NC)"
+	@FT_E2E_ENABLE=1 $(MAKE) test-e2e-mlx
 	@echo ""
 	@echo "$(GREEN)🎉 All end-to-end tests completed successfully!$(NC)"
 

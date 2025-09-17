@@ -265,7 +265,7 @@ if MLX_AVAILABLE:
 
             # Load weights from MLX native format
             flat_weights = mx.load(str(path / "model.npz"))
-            
+
             # Unflatten weights back to nested structure
             weights = {}
             for k, v in flat_weights.items():
@@ -276,7 +276,7 @@ if MLX_AVAILABLE:
                         d[part] = {}
                     d = d[part]
                 d[parts[-1]] = v
-            
+
             self.update(weights)
 
         @property
@@ -305,6 +305,31 @@ if MLX_AVAILABLE:
         def get_lora_params(self) -> tuple[list[mx.array], int, int]:
             """Get LoRA parameters for training."""
             return get_lora_trainable_params(self)
+
+        def named_parameters(self):
+            """Return named parameters for training compatibility (MLX arrays).
+
+            Traverses the parameter tree produced by self.parameters() and yields
+            (dotted_name, parameter) pairs similar to PyTorch.
+            """
+            params = []
+
+            def collect(param_dict, prefix: str = ""):
+                for name, value in param_dict.items():
+                    full = f"{prefix}{name}" if prefix else name
+                    if isinstance(value, dict):
+                        collect(value, f"{full}.")
+                    elif isinstance(value, list):
+                        for idx, item in enumerate(value):
+                            if isinstance(item, dict):
+                                collect(item, f"{full}.{idx}.")
+                            elif hasattr(item, 'parameters'):
+                                collect(dict(item.parameters()), f"{full}.{idx}.")
+                    elif hasattr(value, 'shape'):
+                        params.append((full, value))
+
+            collect(self.parameters())
+            return params
 
     class GPTTransformerBlock(nn.Module):
         """GPT-2 style transformer block with proper parameter naming."""

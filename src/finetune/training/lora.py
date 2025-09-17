@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -119,9 +120,22 @@ class LoRALinear(nn.Module):
 class LoRALayer:
     """Mixin for adding LoRA functionality to existing layers."""
 
+    def _resolve_path(self, root: nn.Module | list, path: str):
+        """Resolve dotted path supporting list indices (e.g., layers.21.attn)."""
+        obj = root
+        for part in path.split(".") if path else []:
+            if isinstance(obj, list):
+                if part.isdigit():
+                    obj = obj[int(part)]
+                else:
+                    raise AttributeError(f"List index must be numeric, got {part}")
+            else:
+                obj = getattr(obj, part)
+        return obj
+
     def add_lora(self, config: LoRAConfig) -> None:
         """Add LoRA adapters to compatible submodules."""
-        for _name, module in self.named_modules():
+        for name, module in self.named_modules():
             if any(target in name for target in config.target_modules):
                 if isinstance(module, nn.Linear):
                     # Replace with LoRA version
@@ -139,18 +153,13 @@ class LoRALayer:
                     # Replace module
                     parent_name = ".".join(name.split(".")[:-1])
                     child_name = name.split(".")[-1]
-                    if parent_name:
-                        parent = self
-                        for part in parent_name.split("."):
-                            parent = getattr(parent, part)
-                        setattr(parent, child_name, lora_linear)
-                    else:
-                        setattr(self, name, lora_linear)
+                    parent = self._resolve_path(self, parent_name)
+                    setattr(parent, child_name, lora_linear)
 
     def get_lora_params(self) -> dict[str, mx.array]:
         """Get only the LoRA parameters for saving/loading."""
         lora_params = {}
-        for _name, module in self.named_modules():
+        for name, module in self.named_modules():
             if isinstance(module, LoRALinear):
                 lora_params[f"{name}.lora_a"] = module.lora_a
                 lora_params[f"{name}.lora_b"] = module.lora_b
@@ -160,7 +169,7 @@ class LoRALayer:
 
     def load_lora_params(self, params: dict[str, mx.array]) -> None:
         """Load LoRA parameters."""
-        for _name, module in self.named_modules():
+        for name, module in self.named_modules():
             if isinstance(module, LoRALinear):
                 if f"{name}.lora_a" in params:
                     module.lora_a = params[f"{name}.lora_a"]
@@ -200,6 +209,18 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
         The model with LoRA adapters added
     """
     # Find and replace target modules
+    def _resolve_path(root: nn.Module | list, path: str):
+        obj = root
+        for part in path.split(".") if path else []:
+            if isinstance(obj, list):
+                if part.isdigit():
+                    obj = obj[int(part)]
+                else:
+                    raise AttributeError(f"List index must be numeric, got {part}")
+            else:
+                obj = getattr(obj, part)
+        return obj
+
     for name, module in model.named_modules():
         # Check if this module name matches any target
         module_name = name.split(".")[-1] if "." in name else name
@@ -221,13 +242,8 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
                     lora_linear.base.bias = module.bias
 
                 # Replace in parent
-                if parent_name:
-                    parent = model
-                    for part in parent_name.split("."):
-                        parent = getattr(parent, part)
-                    setattr(parent, module_name, lora_linear)
-                else:
-                    setattr(model, module_name, lora_linear)
+                parent = _resolve_path(model, parent_name)
+                setattr(parent, module_name, lora_linear)
 
     return model
 
@@ -253,7 +269,7 @@ def get_lora_trainable_params(model: nn.Module) -> tuple[list[mx.array], int, in
     return trainable_params, trainable_count, total_count
 
 
-def save_lora_weights(model: nn.Module, path: str) -> None:
+def save_lora_weights(model: nn.Module, path: str | Path) -> None:
     """Save only LoRA weights to a file."""
     lora_weights = {}
     for name, module in model.named_modules():
@@ -262,13 +278,13 @@ def save_lora_weights(model: nn.Module, path: str) -> None:
             lora_weights[f"{name}.lora_b"] = module.lora_b
             if hasattr(module, "magnitude"):
                 lora_weights[f"{name}.magnitude"] = module.magnitude
+    # Save as npz (dict of arrays)
+    mx.savez(str(path), **lora_weights)
 
-    mx.save(path, lora_weights)
 
-
-def load_lora_weights(model: nn.Module, path: str) -> None:
+def load_lora_weights(model: nn.Module, path: str | Path) -> None:
     """Load LoRA weights into a model."""
-    lora_weights = mx.load(path)
+    lora_weights = mx.load(str(path))
 
     for name, module in model.named_modules():
         if isinstance(module, LoRALinear):

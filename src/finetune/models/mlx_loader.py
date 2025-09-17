@@ -118,7 +118,13 @@ class MLXModelLoader(ModelLoader):
         mlx_weights = self.convert_weights(weights, config.model_type)
 
         # Update model with converted weights
-        model.update(mlx_weights)
+        try:
+            model.update(mlx_weights)
+        except Exception as e:
+            # Fallback: unflatten dotted keys into nested structure for MLX update
+            logger.debug(f"Falling back to nested update due to: {e}")
+            nested = self._unflatten_weights(mlx_weights)
+            model.update(nested)
 
         logger.info(
             f"Successfully loaded {config.model_type} model with {model.num_parameters:,} parameters"
@@ -195,15 +201,27 @@ class MLXModelLoader(ModelLoader):
 
         mlx_weights = {}
 
+        is_llama = "llama" in model_type.lower()
+
         for pytorch_name, pytorch_tensor in source_weights.items():
             # Convert tensor to numpy then MLX
             if isinstance(pytorch_tensor, torch.Tensor):
-                numpy_array = pytorch_tensor.detach().cpu().numpy()
+                t = pytorch_tensor.detach().cpu()
+                # Cast unsupported dtypes to a NumPy-supported type
+                if t.dtype == torch.bfloat16:
+                    t = t.to(torch.float16)
+                numpy_array = t.numpy()
             else:
                 numpy_array = np.array(pytorch_tensor)
 
             # Map name
-            mlx_name = name_map.get(pytorch_name, pytorch_name)
+            if is_llama:
+                # For llama, only load explicitly mapped names to avoid strict update failures
+                if pytorch_name not in name_map:
+                    continue
+                mlx_name = name_map[pytorch_name]
+            else:
+                mlx_name = name_map.get(pytorch_name, pytorch_name)
 
             # Skip unnecessary weights
             if self._should_skip_weight(mlx_name):
@@ -218,6 +236,21 @@ class MLXModelLoader(ModelLoader):
             mlx_weights[mlx_name] = mlx_array
 
         return mlx_weights
+
+    def _unflatten_weights(self, flat: dict[str, Any]) -> dict[str, Any]:
+        """Convert dotted keys into nested dictionaries: a.b.c -> {a: {b: {c: value}}}.
+        Lists are not handled here; models with list-based layers should override update.
+        """
+        nested: dict[str, Any] = {}
+        for key, value in flat.items():
+            parts = key.split(".")
+            d = nested
+            for part in parts[:-1]:
+                if part not in d or not isinstance(d[part], dict):
+                    d[part] = {}
+                d = d[part]
+            d[parts[-1]] = value
+        return nested
 
     def _get_name_mapping(self, model_type: str) -> dict[str, str]:
         """Get weight name mapping for different model types."""

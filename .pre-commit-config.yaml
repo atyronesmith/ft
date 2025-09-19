@@ -35,7 +35,12 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-all]
+        additional_dependencies: [
+          types-PyYAML,
+          types-click,
+          types-setuptools,
+          types-requests
+        ]
         args: [--config-file=pyproject.toml]
         exclude: ^tests/
 

@@ -147,10 +147,13 @@ class LoRALayer:
                         config,
                         bias=module.bias is not None
                     )
-                    # Copy weights
-                    lora_linear.base.weight = module.weight
+                    # Copy weights (create new tensors to ensure they're truly frozen)
+                    lora_linear.base.weight = mx.array(module.weight)
                     if module.bias is not None:
-                        lora_linear.base.bias = module.bias
+                        lora_linear.base.bias = mx.array(module.bias)
+
+                    # Ensure the base weights are truly frozen
+                    lora_linear.base.freeze()
 
                     # Replace module
                     parent_name = ".".join(name.split(".")[:-1])

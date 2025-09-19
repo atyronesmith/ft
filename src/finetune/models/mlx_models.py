@@ -21,8 +21,19 @@ from finetune.training.lora import LoRAConfig, apply_lora_to_model, get_lora_tra
 
 if MLX_AVAILABLE:
 
+    def flatten_params(params, prefix=''):
+        flat = {}
+        for k, v in params.items():
+            full_key = f"{prefix}{k}." if prefix else f"{k}."
+            if isinstance(v, dict):
+                flat.update(flatten_params(v, full_key))
+            elif hasattr(v, 'shape'):
+                flat[full_key.rstrip('.')] = v
+            # else: skip non-array values
+        return flat
+
     class RMSNorm(nn.Module):
-        """RMSNorm layer for MLX."""
+        """RMSNorm layer for MLX - HuggingFace compatible implementation."""
 
         def __init__(self, dims: int, eps: float = 1e-6):
             super().__init__()
@@ -30,7 +41,22 @@ if MLX_AVAILABLE:
             self.eps = eps
 
         def __call__(self, x):
-            return mx.fast.rms_norm(x, self.weight, self.eps)
+            # HuggingFace-compatible RMSNorm implementation
+            # Exact match to LlamaRMSNorm.forward()
+            input_dtype = x.dtype
+            x_float32 = x.astype(mx.float32)
+
+            # Compute variance: mean of squares along last dimension
+            # HF: hidden_states.pow(2).mean(-1, keepdim=True)
+            variance = mx.mean(mx.square(x_float32), axis=-1, keepdims=True)
+
+            # Normalize: x * rsqrt(variance + eps)
+            # HF: hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+            normalized = x_float32 * mx.rsqrt(variance + self.eps)
+
+            # Apply weight AFTER converting back to input dtype (HF order)
+            # HF: self.weight * hidden_states.to(input_dtype)
+            return self.weight * normalized.astype(input_dtype)
 
     class Attention(nn.Module):
         """Multi-head attention for MLX."""
@@ -60,7 +86,8 @@ if MLX_AVAILABLE:
             x: mx.array,
             mask: mx.array | None = None,
             cache: tuple[mx.array, mx.array] | None = None,
-        ) -> mx.array:
+            offset: int = 0,  # Add offset parameter
+        ) -> tuple[mx.array, tuple[mx.array, mx.array]]:
             B, L, D = x.shape
 
             queries = (
@@ -78,14 +105,16 @@ if MLX_AVAILABLE:
             )
 
             # Apply RoPE
-            queries = self.rope(queries)
-            keys = self.rope(keys)
+            queries = self.rope(queries, offset=offset)
+            keys = self.rope(keys, offset=offset)
 
             # Handle cache for inference
             if cache is not None:
                 key_cache, value_cache = cache
                 keys = mx.concatenate([key_cache, keys], axis=2)
                 values = mx.concatenate([value_cache, values], axis=2)
+
+            cache = (keys, values)
 
             # Repeat keys and values for GQA
             if self.num_key_value_groups > 1:
@@ -105,7 +134,7 @@ if MLX_AVAILABLE:
             output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
             output = self.o_proj(output)
 
-            return output
+            return output, cache
 
     class MLP(nn.Module):
         """Feed-forward network for MLX."""
@@ -135,16 +164,17 @@ if MLX_AVAILABLE:
             x: mx.array,
             mask: mx.array | None = None,
             cache: tuple[mx.array, mx.array] | None = None,
-        ) -> mx.array:
+            offset: int = 0,
+        ) -> tuple[mx.array, tuple[mx.array, mx.array]]:
             # Self-attention with residual
-            r = self.self_attn(self.input_layernorm(x), mask, cache)
+            r, cache = self.self_attn(self.input_layernorm(x), mask, cache, offset=offset)
             h = x + r
 
             # MLP with residual
             r = self.mlp(self.post_attention_layernorm(h))
             out = h + r
 
-            return out
+            return out, cache
 
     class MLXLlamaModel(nn.Module, BaseModel):
         """Llama model implementation in MLX."""
@@ -168,7 +198,8 @@ if MLX_AVAILABLE:
             input_ids: mx.array,
             mask: mx.array | None = None,
             cache: list | None = None,
-        ) -> mx.array:
+            offset: int = 0,
+        ) -> tuple[mx.array, list]:
             """Forward pass through the model."""
             # Token embeddings
             h = self.embed_tokens(input_ids)
@@ -179,9 +210,13 @@ if MLX_AVAILABLE:
                 mask = mask.astype(h.dtype)
 
             # Pass through transformer layers
+            if cache is None or len(cache) == 0:
+                cache = [None] * len(self.layers)
+
+            new_cache = []
             for i, layer in enumerate(self.layers):
-                layer_cache = cache[i] if cache else None
-                h = layer(h, mask, layer_cache)
+                h, c = layer(h, mask, cache[i], offset=offset)
+                new_cache.append(c)
 
             # Final norm
             h = self.norm(h)
@@ -192,7 +227,7 @@ if MLX_AVAILABLE:
             else:
                 logits = h @ self.embed_tokens.weight.T
 
-            return logits
+            return logits, new_cache
 
         def generate(
             self,
@@ -200,13 +235,15 @@ if MLX_AVAILABLE:
             max_length: int = 100,
             temperature: float = 1.0,
             top_p: float = 1.0,
+            eos_token_id: int | None = None,
             **kwargs,
         ) -> mx.array:
             """Generate text from the model."""
             cache = []
+            current_offset = input_ids.shape[1]
 
             # Initial forward pass
-            logits = self.forward(input_ids, cache=cache)
+            logits, cache = self.forward(input_ids, cache=cache, offset=0)
 
             generated = [input_ids]
 
@@ -223,14 +260,18 @@ if MLX_AVAILABLE:
                     next_logits = mx.where(next_logits < cutoff, -float("inf"), next_logits)
 
                 # Sample next token
-                probs = mx.softmax(next_logits, axis=-1)
-                next_token = mx.random.categorical(mx.log(probs))
+                next_token = mx.random.categorical(next_logits)
                 next_token = next_token.reshape(1, 1)
 
                 generated.append(next_token)
 
-                # Forward pass with cache
-                logits = self.forward(next_token, cache=cache)
+                # Stop if EOS is generated
+                if eos_token_id is not None and int(next_token[0, 0]) == int(eos_token_id):
+                    break
+
+                # Forward pass with cache using the correct offset
+                logits, cache = self.forward(next_token, cache=cache, offset=current_offset)
+                current_offset += 1
 
             return mx.concatenate(generated, axis=1)
 
@@ -282,21 +323,7 @@ if MLX_AVAILABLE:
         @property
         def num_parameters(self) -> int:
             """Get total number of parameters."""
-            total = 0
-            def count_params(params):
-                nonlocal total
-                for k, v in params.items():
-                    if isinstance(v, dict):
-                        count_params(v)
-                    elif isinstance(v, list):
-                        # Handle lists of modules (like layers)
-                        for item in v:
-                            if hasattr(item, 'parameters'):
-                                count_params(dict(item.parameters()))
-                    elif hasattr(v, 'size'):
-                        total += v.size
-            count_params(dict(self.parameters()))
-            return total
+            return sum(v.size for v in self.parameters().values() if hasattr(v, 'size'))
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""
@@ -349,30 +376,23 @@ if MLX_AVAILABLE:
                 if layer_idx < len(self.layers):
                     self.layers[layer_idx].update(layer_weights)
 
-        def named_parameters(self):
+        def parameters(self):
             """Return named parameters for training compatibility (MLX arrays).
 
             Traverses the parameter tree produced by self.parameters() and yields
             (dotted_name, parameter) pairs similar to PyTorch.
             """
-            params = []
-
-            def collect(param_dict, prefix: str = ""):
-                for name, value in param_dict.items():
-                    full = f"{prefix}{name}" if prefix else name
-                    if isinstance(value, dict):
-                        collect(value, f"{full}.")
-                    elif isinstance(value, list):
-                        for idx, item in enumerate(value):
-                            if isinstance(item, dict):
-                                collect(item, f"{full}.{idx}.")
-                            elif hasattr(item, 'parameters'):
-                                collect(dict(item.parameters()), f"{full}.{idx}.")
-                    elif hasattr(value, 'shape'):
-                        params.append((full, value))
-
-            collect(self.parameters())
+            params = flatten_params(super().parameters())
+            if hasattr(self, 'layers') and isinstance(self.layers, list):
+                for i, layer in enumerate(self.layers):
+                    if isinstance(layer, nn.Module):
+                        layer_params = flatten_params(layer.parameters())
+                        for k, v in layer_params.items():
+                            params[f'layers.{i}.{k}'] = v
             return params
+
+        def named_parameters(self):
+            return [(name, param) for name, param in self.parameters().items()]
 
     class GPTTransformerBlock(nn.Module):
         """GPT-2 style transformer block with proper parameter naming."""
@@ -474,12 +494,12 @@ if MLX_AVAILABLE:
             """Create a GPT-style transformer block."""
             return GPTTransformerBlock(config)
 
-        def forward(self, input_ids: mx.array, **kwargs) -> mx.array:
+        def forward(self, input_ids: mx.array, offset: int = 0, **kwargs) -> mx.array:
             """Forward pass through GPT model."""
             B, L = input_ids.shape
 
             # Get token and position embeddings
-            positions = mx.arange(L)
+            positions = mx.arange(offset, offset + L)
             token_embeddings = self.wte(input_ids)
             position_embeddings = self.wpe(positions)
 
@@ -586,17 +606,16 @@ if MLX_AVAILABLE:
             return get_lora_trainable_params(self)
 
         def named_parameters(self):
-            """Return named parameters for training compatibility."""
-            # Convert MLX parameters() dict to named tuples like PyTorch
-            params = []
-            def collect_params(param_dict, prefix=""):
-                for name, value in param_dict.items():
-                    if isinstance(value, dict):
-                        collect_params(value, f"{prefix}{name}.")
-                    elif hasattr(value, 'shape'):  # MLX array
-                        params.append((f"{prefix}{name}".rstrip('.'), value))
+            return [(name, param) for name, param in self.parameters().items()]
 
-            collect_params(self.parameters())
+        def parameters(self):
+            params = flatten_params(super().parameters())
+            if hasattr(self, 'layers') and isinstance(self.layers, list):
+                for i, layer in enumerate(self.layers):
+                    if isinstance(layer, nn.Module):
+                        layer_params = flatten_params(layer.parameters())
+                        for k, v in layer_params.items():
+                            params[f'layers.{i}.{k}'] = v
             return params
 
     # Model registry for Hugging Face transformer architectures

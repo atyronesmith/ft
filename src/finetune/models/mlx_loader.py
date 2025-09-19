@@ -114,8 +114,7 @@ class MLXModelLoader(ModelLoader):
         model = get_mlx_model(config)
 
         # Load and convert weights
-        weights = self._load_pytorch_weights(path)
-        mlx_weights = self.convert_weights(weights, config.model_type)
+        mlx_weights = self.convert_weights(self._load_pytorch_weights(path), config)
 
         # Update model with converted weights
         try:
@@ -192,12 +191,12 @@ class MLXModelLoader(ModelLoader):
 
         return weights
 
-    def convert_weights(self, source_weights: dict[str, Any], model_type: str) -> dict[str, Any]:
+    def convert_weights(self, source_weights: dict[str, Any], config: ModelConfig) -> dict[str, Any]:
         """Convert PyTorch weights to MLX format."""
         import torch
 
         mlx_weights = {}
-        is_llama = "llama" in model_type.lower()
+        is_llama = "llama" in config.model_type.lower()
 
         for pytorch_name, pytorch_tensor in source_weights.items():
             # Convert tensor to numpy then MLX
@@ -220,14 +219,16 @@ class MLXModelLoader(ModelLoader):
                 mlx_name = pytorch_name
 
             # Skip unnecessary weights
-            if self._should_skip_weight(mlx_name):
+            if self._should_skip_weight(mlx_name, config):
                 continue
 
-            # Convert to MLX array
+            # Convert to MLX array with float32 precision for compatibility
             mlx_array = mx.array(numpy_array)
+            if mlx_array.dtype == mx.float16:
+                mlx_array = mlx_array.astype(mx.float32)
 
             # Handle special cases
-            mlx_array = self._handle_special_weights(mlx_name, mlx_array, model_type)
+            mlx_array = self._handle_special_weights(mlx_name, mlx_array, config.model_type)
 
             mlx_weights[mlx_name] = mlx_array
 
@@ -300,13 +301,18 @@ class MLXModelLoader(ModelLoader):
         # Default: return as-is
         return {}
 
-    def _should_skip_weight(self, name: str) -> bool:
+    def _should_skip_weight(self, name: str, config: ModelConfig) -> bool:
         """Check if weight should be skipped."""
+        # Skip lm_head if it's tied to the embedding layer's weights
+        if "lm_head.weight" in name and config.tie_word_embeddings:
+            logger.debug(f"Skipping tied weight: {name}")
+            return True
+
+        # General skip patterns
         skip_patterns = [
             "rotary_emb",  # Computed dynamically
-            "masked_bias",  # GPT-2 specific, not needed
+            "masked_bias",  # Not needed
             "attn.bias",  # Causal mask, computed dynamically
-            "lm_head.weight",  # Skip for tied embeddings (GPT-2 models)
         ]
 
         return any(pattern in name for pattern in skip_patterns)

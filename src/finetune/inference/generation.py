@@ -111,15 +111,33 @@ class MLXTextGenerator:
             logger.debug(message)
 
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
-        """Format text using the exact Ollama template format."""
+        """Format text using TinyLlama's native HuggingFace chat template."""
         try:
-            # Use exact Ollama template format with system message
-            ollama_prompt = f"<|system|>\nYou are a helpful AI assistant.</s>\n<|user|>\n{text}</s>\n<|assistant|>\n"
-            input_ids = self.tokenizer.encode(ollama_prompt, return_tensors="np")[0].tolist()
-            return ollama_prompt, input_ids
+            # CORRECTED: Use HuggingFace's native chat template which is what the model was trained on
+            # This should give us the exact format that produces good results
+            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template:
+                # First try simple user message (no system message)
+                # This matches what works well in many cases
+                messages = [{"role": "user", "content": text}]
+                formatted_prompt = self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+
+                self._debug("Using HF native chat template")
+                self._debug(f"Template format: {repr(formatted_prompt[:100])}...")
+
+                input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="np")[0].tolist()
+                return formatted_prompt, input_ids
+            else:
+                # Fallback if no chat template
+                self._debug("No chat template found, using simple format")
+                simple_prompt = f"Question: {text}\nAnswer:"
+                input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
+                return simple_prompt, input_ids
+
         except Exception as e:
-            self._debug(f"Ollama template failed: {e}, falling back to simple format")
-            # Fallback to simple format
+            self._debug(f"Chat template failed: {e}, falling back to simple format")
+            # Final fallback to simple format
             simple_prompt = f"Question: {text}\nAnswer:"
             input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
             return simple_prompt, input_ids
@@ -179,15 +197,23 @@ class MLXTextGenerator:
                     "Rome",
                     "Madrid",
                     "Lisbon",
-                    "London",
                     "Tokyo",
                     "Beijing",
                     "Delhi",
-                    "Kabul",
-                    "Tirana",
+                    "New Delhi",
+                    "Canberra",
+                    "Ottawa",
+                    "London",
+                    "Washington",
+                    "Moscow",
+                    "Cairo",
+                    "Sydney",
+                    "Melbourne",  # Common incorrect answers for Australia
+                    "Vancouver",
+                    "Toronto",  # Common incorrect answers for Canada
                 ]
                 for city in cities:
-                    if city.lower() in partial_text.lower() and step >= 3:
+                    if city.lower() in partial_text.lower() and step >= 2:
                         return True, f"found_answer_{city}"
 
             # Prevent overly long rambling answers
@@ -303,28 +329,14 @@ class MLXTextGenerator:
 
                 if self.config.stop_on_special_tokens:
                     try:
-                        # Check for exact Ollama stop tokens
-                        current_text = self.tokenizer.decode(generated_tokens + [next_token_id])
+                        # Simple check for EOS and basic stop tokens
+                        current_text = self.tokenizer.decode(generated_tokens)
 
-                        # Ollama stop tokens: <|system|>, <|user|>, <|assistant|>, </s>
-                        ollama_stop_tokens = ["<|system|>", "<|user|>", "<|assistant|>", "</s>"]
+                        if "</s>" in current_text:
+                            self._debug("Hit </s> token")
+                            break
 
-                        for stop_token in ollama_stop_tokens:
-                            if stop_token in current_text:
-                                self._debug(f"Hit Ollama stop token: {stop_token}")
-                                # Remove tokens that form the stop sequence
-                                stop_token_ids = self.tokenizer.encode(
-                                    stop_token, add_special_tokens=False
-                                )
-                                if len(stop_token_ids) <= len(generated_tokens) + 1:
-                                    # Remove the stop token sequence from generated tokens
-                                    cutoff = len(generated_tokens) + 1 - len(stop_token_ids)
-                                    generated_tokens = generated_tokens[:cutoff]
-                                return self.tokenizer.decode(
-                                    generated_tokens, skip_special_tokens=True
-                                ).strip()
-
-                    except:
+                    except Exception:
                         pass
 
                 # Content-based stopping

@@ -8,11 +8,13 @@ Compare intermediate activations in the forward pass to find the divergence poin
 
 import sys
 from pathlib import Path
+
 import numpy as np
 import torch
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+
 
 def compare_forward_pass():
     """Compare forward pass between MLX and HuggingFace implementations."""
@@ -20,9 +22,9 @@ def compare_forward_pass():
     print("=" * 60)
 
     try:
+        import mlx.core as mx
         from finetune.models.manager import ModelManager
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        import mlx.core as mx
 
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
@@ -115,12 +117,14 @@ def compare_forward_pass():
             print("MLX top 5 token IDs:", mlx_top5.tolist())
             print("HF top 5 token IDs: ", hf_top5.tolist())
 
-            for i, (mlx_id, hf_id) in enumerate(zip(mlx_top5, hf_top5)):
+            for i, (mlx_id, hf_id) in enumerate(zip(mlx_top5, hf_top5, strict=False)):
                 mlx_token = tokenizer.decode([mlx_id])
                 hf_token = tokenizer.decode([hf_id])
                 mlx_prob = float(mlx_logits_np[-1, mlx_id])
                 hf_prob = float(hf_logits_np[-1, hf_id])
-                print(f"  {i+1}. MLX: '{mlx_token}' ({mlx_prob:.3f}) | HF: '{hf_token}' ({hf_prob:.3f})")
+                print(
+                    f"  {i+1}. MLX: '{mlx_token}' ({mlx_prob:.3f}) | HF: '{hf_token}' ({hf_prob:.3f})"
+                )
 
             return "forward_pass"
         else:
@@ -130,8 +134,10 @@ def compare_forward_pass():
     except Exception as e:
         print(f"💥 CRITICAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return "error"
+
 
 if __name__ == "__main__":
     result = compare_forward_pass()

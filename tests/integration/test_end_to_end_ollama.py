@@ -279,7 +279,9 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
     successful_examples = 0
     total = len(test_questions)
 
-    for i, (question, expected_answer) in enumerate(zip(test_questions, expected_answers, strict=False)):
+    for i, (question, expected_answer) in enumerate(
+        zip(test_questions, expected_answers, strict=False)
+    ):
         try:
             if tokenizer is not None and VERBOSE:
                 # CORRECTED: Clear MLX cache and reset model state between generations
@@ -561,7 +563,9 @@ def _train_with_workflow(
             _vprint("✅ Set baseline model to evaluation mode for inference")
 
             baseline_results = {"results": []}
-            for i, (question, expected_answer) in enumerate(zip(test_questions, expected_answers, strict=False)):
+            for i, (question, expected_answer) in enumerate(
+                zip(test_questions, expected_answers, strict=False)
+            ):
                 _vprint(f"Baseline Q{i+1}: {question}")
                 try:
                     # CORRECTED: Clear MLX cache and reset model state between generations

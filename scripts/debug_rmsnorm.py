@@ -7,11 +7,13 @@ This isolates the RMSNorm computation to find the exact algorithmic difference.
 
 import sys
 from pathlib import Path
+
 import numpy as np
 import torch
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+
 
 def compare_rmsnorm_implementations():
     """Compare RMSNorm implementations between MLX and HuggingFace."""
@@ -19,9 +21,9 @@ def compare_rmsnorm_implementations():
     print("=" * 50)
 
     try:
+        import mlx.core as mx
         from finetune.models.manager import ModelManager
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        import mlx.core as mx
 
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
@@ -54,7 +56,7 @@ def compare_rmsnorm_implementations():
         mlx_norm = mlx_model.layers[0].input_layernorm
         hf_norm = hf_model.model.layers[0].input_layernorm
 
-        print(f"\n🔍 RMSNorm configurations:")
+        print("\n🔍 RMSNorm configurations:")
         print(f"MLX eps: {mlx_norm.eps}")
         print(f"HF eps: {hf_norm.variance_epsilon}")
 
@@ -68,7 +70,7 @@ def compare_rmsnorm_implementations():
             print(f"Max weight diff: {np.max(np.abs(mlx_weight - hf_weight))}")
 
         # Apply RMSNorm to the same input
-        print(f"\n🧪 Testing RMSNorm computation:")
+        print("\n🧪 Testing RMSNorm computation:")
 
         # MLX computation
         mlx_norm_output = mlx_norm(mlx_embeddings)
@@ -90,7 +92,7 @@ def compare_rmsnorm_implementations():
         print(f"📊 Mean difference: {mean_diff:.2e}")
 
         if not outputs_match:
-            print(f"\n🔍 Sample values comparison:")
+            print("\n🔍 Sample values comparison:")
             print(f"MLX output sample:  {mlx_output_np.flat[:10]}")
             print(f"HF output sample:   {hf_output_np.flat[:10]}")
 
@@ -111,8 +113,10 @@ def compare_rmsnorm_implementations():
     except Exception as e:
         print(f"💥 CRITICAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return "error"
+
 
 if __name__ == "__main__":
     result = compare_rmsnorm_implementations()

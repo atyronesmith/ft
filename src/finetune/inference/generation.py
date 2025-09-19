@@ -5,11 +5,14 @@ This module provides high-quality text generation for fine-tuned models,
 implementing the state-of-the-art approaches outlined in OUTPUT.md.
 """
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
+
 from loguru import logger
 
 try:
     import mlx.core as mx
+
     MLX_AVAILABLE = True
 except ImportError:
     MLX_AVAILABLE = False
@@ -45,8 +48,8 @@ class GenerationConfig:
         return cls(
             max_tokens=20,
             temperature=0.8,  # Ollama default
-            top_p=0.9,       # Ollama default
-            top_k=40,        # Ollama default
+            top_p=0.9,  # Ollama default
+            top_k=40,  # Ollama default
             repetition_penalty=1.1,  # Ollama default
             verbose=False,
         )
@@ -165,12 +168,24 @@ class MLXTextGenerator:
             partial_text = self.tokenizer.decode(tokens, skip_special_tokens=True)
 
             # Stop on natural sentence completion
-            if partial_text.strip().endswith(('.', '!', '?')) and len(partial_text.strip()) > 3:
+            if partial_text.strip().endswith((".", "!", "?")) and len(partial_text.strip()) > 3:
                 return True, "natural_completion"
 
             # For factual Q&A: stop when we have a complete, confident answer
             if "capital" in question.lower():
-                cities = ["Paris", "Berlin", "Rome", "Madrid", "Lisbon", "London", "Tokyo", "Beijing", "Delhi", "Kabul", "Tirana"]
+                cities = [
+                    "Paris",
+                    "Berlin",
+                    "Rome",
+                    "Madrid",
+                    "Lisbon",
+                    "London",
+                    "Tokyo",
+                    "Beijing",
+                    "Delhi",
+                    "Kabul",
+                    "Tirana",
+                ]
                 for city in cities:
                     if city.lower() in partial_text.lower() and step >= 3:
                         return True, f"found_answer_{city}"
@@ -219,19 +234,21 @@ class MLXTextGenerator:
 
         for token_id, count in token_counts.items():
             # Apply stronger penalty for tokens that appear multiple times
-            effective_penalty = penalty ** min(count, 3)  # Cap at penalty^3 for very frequent tokens
+            effective_penalty = penalty ** min(
+                count, 3
+            )  # Cap at penalty^3 for very frequent tokens
 
             if float(logits[token_id]) > 0:
                 penalty_logits = mx.where(
                     mx.arange(logits.shape[0]) == token_id,
                     logits[token_id] / effective_penalty,
-                    penalty_logits
+                    penalty_logits,
                 )
             else:
                 penalty_logits = mx.where(
                     mx.arange(logits.shape[0]) == token_id,
                     logits[token_id] * effective_penalty,
-                    penalty_logits
+                    penalty_logits,
                 )
 
         return penalty_logits
@@ -265,7 +282,7 @@ class MLXTextGenerator:
                     next_logits = mx.where(
                         mx.arange(next_logits.shape[0]) == self.tokenizer.unk_token_id,
                         -float("inf"),
-                        next_logits
+                        next_logits,
                     )
 
                 # Sample next token
@@ -275,7 +292,9 @@ class MLXTextGenerator:
                 generated_tokens.append(next_token_id)
                 all_token_ids.append(next_token_id)  # Add to repetition penalty tracking
 
-                self._debug(f"Step {step}: token_id={next_token_id}, token='{self.tokenizer.decode([next_token_id])}'")
+                self._debug(
+                    f"Step {step}: token_id={next_token_id}, token='{self.tokenizer.decode([next_token_id])}'"
+                )
 
                 # Check stopping conditions
                 if self.config.stop_on_eos and next_token_id == self.tokenizer.eos_token_id:
@@ -288,18 +307,22 @@ class MLXTextGenerator:
                         current_text = self.tokenizer.decode(generated_tokens + [next_token_id])
 
                         # Ollama stop tokens: <|system|>, <|user|>, <|assistant|>, </s>
-                        ollama_stop_tokens = ['<|system|>', '<|user|>', '<|assistant|>', '</s>']
+                        ollama_stop_tokens = ["<|system|>", "<|user|>", "<|assistant|>", "</s>"]
 
                         for stop_token in ollama_stop_tokens:
                             if stop_token in current_text:
                                 self._debug(f"Hit Ollama stop token: {stop_token}")
                                 # Remove tokens that form the stop sequence
-                                stop_token_ids = self.tokenizer.encode(stop_token, add_special_tokens=False)
+                                stop_token_ids = self.tokenizer.encode(
+                                    stop_token, add_special_tokens=False
+                                )
                                 if len(stop_token_ids) <= len(generated_tokens) + 1:
                                     # Remove the stop token sequence from generated tokens
                                     cutoff = len(generated_tokens) + 1 - len(stop_token_ids)
                                     generated_tokens = generated_tokens[:cutoff]
-                                return self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+                                return self.tokenizer.decode(
+                                    generated_tokens, skip_special_tokens=True
+                                ).strip()
 
                     except:
                         pass
@@ -316,9 +339,11 @@ class MLXTextGenerator:
 
             # Decode the generated tokens
             if generated_tokens:
-                generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+                generated_text = self.tokenizer.decode(
+                    generated_tokens, skip_special_tokens=True
+                ).strip()
                 # Clean up any remaining chat template artifacts
-                if generated_text.endswith('<|'):
+                if generated_text.endswith("<|"):
                     generated_text = generated_text[:-2].strip()
             else:
                 generated_text = "[No response]"

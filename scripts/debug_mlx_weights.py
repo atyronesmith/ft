@@ -9,10 +9,12 @@ and the reference HuggingFace PyTorch implementation.
 
 import sys
 from pathlib import Path
+
 import numpy as np
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+
 
 def compare_weight_loading():
     """Compare weight loading between MLX and HuggingFace implementations."""
@@ -21,10 +23,9 @@ def compare_weight_loading():
 
     try:
         # Load our MLX implementation
+        import torch
         from finetune.models.manager import ModelManager
         from transformers import AutoModelForCausalLM
-        import mlx.core as mx
-        import torch
 
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
         print(f"Loading model: {model_id}")
@@ -44,14 +45,46 @@ def compare_weight_loading():
         comparisons = [
             # (MLX path, HF path, description)
             ("embed_tokens.weight", "model.embed_tokens.weight", "Embedding layer"),
-            ("layers.0.self_attn.q_proj.weight", "model.layers.0.self_attn.q_proj.weight", "First layer Q projection"),
-            ("layers.0.self_attn.k_proj.weight", "model.layers.0.self_attn.k_proj.weight", "First layer K projection"),
-            ("layers.0.self_attn.v_proj.weight", "model.layers.0.self_attn.v_proj.weight", "First layer V projection"),
-            ("layers.0.self_attn.o_proj.weight", "model.layers.0.self_attn.o_proj.weight", "First layer output projection"),
-            ("layers.0.mlp.gate_proj.weight", "model.layers.0.mlp.gate_proj.weight", "First layer MLP gate"),
-            ("layers.0.mlp.up_proj.weight", "model.layers.0.mlp.up_proj.weight", "First layer MLP up"),
-            ("layers.0.mlp.down_proj.weight", "model.layers.0.mlp.down_proj.weight", "First layer MLP down"),
-            ("layers.5.self_attn.q_proj.weight", "model.layers.5.self_attn.q_proj.weight", "Middle layer Q projection"),
+            (
+                "layers.0.self_attn.q_proj.weight",
+                "model.layers.0.self_attn.q_proj.weight",
+                "First layer Q projection",
+            ),
+            (
+                "layers.0.self_attn.k_proj.weight",
+                "model.layers.0.self_attn.k_proj.weight",
+                "First layer K projection",
+            ),
+            (
+                "layers.0.self_attn.v_proj.weight",
+                "model.layers.0.self_attn.v_proj.weight",
+                "First layer V projection",
+            ),
+            (
+                "layers.0.self_attn.o_proj.weight",
+                "model.layers.0.self_attn.o_proj.weight",
+                "First layer output projection",
+            ),
+            (
+                "layers.0.mlp.gate_proj.weight",
+                "model.layers.0.mlp.gate_proj.weight",
+                "First layer MLP gate",
+            ),
+            (
+                "layers.0.mlp.up_proj.weight",
+                "model.layers.0.mlp.up_proj.weight",
+                "First layer MLP up",
+            ),
+            (
+                "layers.0.mlp.down_proj.weight",
+                "model.layers.0.mlp.down_proj.weight",
+                "First layer MLP down",
+            ),
+            (
+                "layers.5.self_attn.q_proj.weight",
+                "model.layers.5.self_attn.q_proj.weight",
+                "Middle layer Q projection",
+            ),
             ("lm_head.weight", "lm_head.weight", "Language model head"),
         ]
 
@@ -64,7 +97,7 @@ def compare_weight_loading():
             try:
                 # Get MLX weight
                 mlx_weight = mlx_model
-                for part in mlx_path.split('.'):
+                for part in mlx_path.split("."):
                     if part.isdigit():
                         mlx_weight = mlx_weight[int(part)]
                     else:
@@ -72,7 +105,7 @@ def compare_weight_loading():
 
                 # Get HuggingFace weight
                 hf_weight = hf_model
-                for part in hf_path.split('.'):
+                for part in hf_path.split("."):
                     if part.isdigit():
                         hf_weight = hf_weight[int(part)]
                     else:
@@ -84,7 +117,9 @@ def compare_weight_loading():
 
                 # Check shapes match
                 if mlx_np.shape != hf_np.shape:
-                    print(f"❌ {description:30} | Shape mismatch: MLX {mlx_np.shape} vs HF {hf_np.shape}")
+                    print(
+                        f"❌ {description:30} | Shape mismatch: MLX {mlx_np.shape} vs HF {hf_np.shape}"
+                    )
                     all_match = False
                     continue
 
@@ -93,7 +128,9 @@ def compare_weight_loading():
                 max_diff = np.max(np.abs(mlx_np - hf_np))
 
                 status = "✅" if are_close else "❌"
-                print(f"{status} {description:30} | Shape: {mlx_np.shape} | Max diff: {max_diff:.2e}")
+                print(
+                    f"{status} {description:30} | Shape: {mlx_np.shape} | Max diff: {max_diff:.2e}"
+                )
 
                 if not are_close:
                     all_match = False
@@ -119,8 +156,10 @@ def compare_weight_loading():
     except Exception as e:
         print(f"💥 CRITICAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return "error"
+
 
 if __name__ == "__main__":
     result = compare_weight_loading()

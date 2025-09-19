@@ -9,16 +9,15 @@ import os
 import sys
 from pathlib import Path
 
+import mlx.core as mx
 import pytest
 from transformers import AutoTokenizer
-import mlx.core as mx
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from finetune.models.manager import ModelManager
 from finetune.inference.generation import GenerationConfig, generate_text
-
+from finetune.models.manager import ModelManager
 
 VERBOSE = os.environ.get("FT_VERBOSE", "0") == "1"
 MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -65,12 +64,19 @@ def test_generation_only():
         ("Greedy (temp=0.0)", GenerationConfig(max_tokens=15, temperature=0.0)),
         ("Ollama Defaults", GenerationConfig.ollama_defaults()),
         ("Ollama for Q&A", GenerationConfig.for_factual_qa()),
-        ("Conservative (temp=0.3)", GenerationConfig(max_tokens=15, temperature=0.3, top_p=0.95, top_k=40, repetition_penalty=1.1)),
+        (
+            "Conservative (temp=0.3)",
+            GenerationConfig(
+                max_tokens=15, temperature=0.3, top_p=0.95, top_k=40, repetition_penalty=1.1
+            ),
+        ),
     ]
 
     for strategy_name, config in strategies:
         _vprint(f"\n📊 Testing strategy: {strategy_name}")
-        _vprint(f"Config: temp={config.temperature}, top_p={config.top_p}, top_k={config.top_k}, rep_penalty={config.repetition_penalty}, max_tokens={config.max_tokens}")
+        _vprint(
+            f"Config: temp={config.temperature}, top_p={config.top_p}, top_k={config.top_k}, rep_penalty={config.repetition_penalty}, max_tokens={config.max_tokens}"
+        )
 
         correct_answers = 0
         total_questions = len(test_cases)
@@ -79,16 +85,12 @@ def test_generation_only():
             try:
                 # Clear cache between generations for consistency
                 mx.eval(model.parameters())
-                if hasattr(mx, 'clear_cache'):
+                if hasattr(mx, "clear_cache"):
                     mx.clear_cache()
 
                 # Generate answer
                 generated = generate_text(
-                    model,
-                    tokenizer,
-                    question,
-                    config,
-                    debug_fn=_vprint if VERBOSE else None
+                    model, tokenizer, question, config, debug_fn=_vprint if VERBOSE else None
                 )
 
                 # Check if correct answer is contained in generation
@@ -109,7 +111,9 @@ def test_generation_only():
                 _vprint("")
 
         accuracy = (correct_answers / total_questions) * 100
-        _vprint(f"📈 {strategy_name} Accuracy: {correct_answers}/{total_questions} = {accuracy:.1f}%")
+        _vprint(
+            f"📈 {strategy_name} Accuracy: {correct_answers}/{total_questions} = {accuracy:.1f}%"
+        )
 
         # Log summary for this strategy
         if accuracy >= 80:
@@ -141,17 +145,13 @@ def test_single_question_detailed():
     _vprint(f"Expected: {expected}")
 
     # Test with greedy decoding for maximum determinism
-    config = GenerationConfig(
-        max_tokens=10,
-        temperature=0.0,  # Pure greedy
-        verbose=True
-    )
+    config = GenerationConfig(max_tokens=10, temperature=0.0, verbose=True)  # Pure greedy
 
     _vprint("\n🎯 Testing with pure greedy decoding (temp=0.0):")
 
     # Clear cache for clean state
     mx.eval(model.parameters())
-    if hasattr(mx, 'clear_cache'):
+    if hasattr(mx, "clear_cache"):
         mx.clear_cache()
 
     generated = generate_text(model, tokenizer, question, config, debug_fn=_vprint)

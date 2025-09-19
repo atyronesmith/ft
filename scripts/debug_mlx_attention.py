@@ -8,11 +8,13 @@ Examine attention mechanism implementation to find the exact divergence point.
 
 import sys
 from pathlib import Path
+
 import numpy as np
 import torch
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+
 
 def compare_attention_mechanism():
     """Compare attention mechanism between MLX and HuggingFace implementations."""
@@ -20,9 +22,9 @@ def compare_attention_mechanism():
     print("=" * 60)
 
     try:
+        import mlx.core as mx
         from finetune.models.manager import ModelManager
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        import mlx.core as mx
 
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
@@ -82,7 +84,9 @@ def compare_attention_mechanism():
         q_max_diff = np.max(np.abs(mlx_q_weight - hf_q_weight_raw))
 
         status = "✅" if q_weights_match else "❌"
-        print(f"{status} Q projection weights match: {q_weights_match} | Max diff: {q_max_diff:.2e}")
+        print(
+            f"{status} Q projection weights match: {q_weights_match} | Max diff: {q_max_diff:.2e}"
+        )
 
         # K projection weights (note: different dimensions due to GQA)
         mlx_k_weight = np.array(mlx_layer.self_attn.k_proj.weight)
@@ -97,7 +101,9 @@ def compare_attention_mechanism():
         k_max_diff = np.max(np.abs(mlx_k_weight - hf_k_weight_raw))
 
         status = "✅" if k_weights_match else "❌"
-        print(f"{status} K projection weights match: {k_weights_match} | Max diff: {k_max_diff:.2e}")
+        print(
+            f"{status} K projection weights match: {k_weights_match} | Max diff: {k_max_diff:.2e}"
+        )
 
         # V projection weights (note: different dimensions due to GQA)
         mlx_v_weight = np.array(mlx_layer.self_attn.v_proj.weight)
@@ -110,7 +116,9 @@ def compare_attention_mechanism():
         v_max_diff = np.max(np.abs(mlx_v_weight - hf_v_weight_raw))
 
         status = "✅" if v_weights_match else "❌"
-        print(f"{status} V projection weights match: {v_weights_match} | Max diff: {v_max_diff:.2e}")
+        print(
+            f"{status} V projection weights match: {v_weights_match} | Max diff: {v_max_diff:.2e}"
+        )
 
         # O projection weights
         mlx_o_weight = np.array(mlx_layer.self_attn.o_proj.weight)
@@ -123,7 +131,9 @@ def compare_attention_mechanism():
         o_max_diff = np.max(np.abs(mlx_o_weight - hf_o_weight_raw))
 
         status = "✅" if o_weights_match else "❌"
-        print(f"{status} O projection weights match: {o_weights_match} | Max diff: {o_max_diff:.2e}")
+        print(
+            f"{status} O projection weights match: {o_weights_match} | Max diff: {o_max_diff:.2e}"
+        )
 
         if not all([q_weights_match, k_weights_match, v_weights_match, o_weights_match]):
             print("\n💥 ATTENTION WEIGHT MISMATCH - Problem in weight conversion!")
@@ -193,7 +203,11 @@ def compare_attention_mechanism():
             print(f"HF V shape: {hf_v.shape}")
 
             # Compare projections
-            for name, mlx_proj, hf_proj in [("Q", mlx_q, hf_q), ("K", mlx_k, hf_k), ("V", mlx_v, hf_v)]:
+            for name, mlx_proj, hf_proj in [
+                ("Q", mlx_q, hf_q),
+                ("K", mlx_k, hf_k),
+                ("V", mlx_v, hf_v),
+            ]:
                 mlx_proj_np = np.array(mlx_proj[0])  # Remove batch dim
                 hf_proj_np = hf_proj[0].detach().numpy()
 
@@ -201,7 +215,9 @@ def compare_attention_mechanism():
                 proj_max_diff = np.max(np.abs(mlx_proj_np - hf_proj_np))
 
                 status = "✅" if proj_match else "❌"
-                print(f"{status} {name} projection match: {proj_match} | Max diff: {proj_max_diff:.2e}")
+                print(
+                    f"{status} {name} projection match: {proj_match} | Max diff: {proj_max_diff:.2e}"
+                )
 
                 if not proj_match:
                     print(f"\n💥 {name} PROJECTION DIVERGENCE!")
@@ -216,14 +232,17 @@ def compare_attention_mechanism():
         except Exception as e:
             print(f"💥 ERROR in attention computation: {e}")
             import traceback
+
             traceback.print_exc()
             return "attention_error"
 
     except Exception as e:
         print(f"💥 CRITICAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return "error"
+
 
 if __name__ == "__main__":
     result = compare_attention_mechanism()

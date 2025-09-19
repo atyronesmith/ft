@@ -8,16 +8,19 @@ Deep dive into transformer layer internals to find the exact divergence point.
 
 import sys
 from pathlib import Path
+
 import numpy as np
 import torch
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-def compare_activations(mlx_tensor, hf_tensor, name: str, atol: float = 1e-5, rtol: float = 1e-4) -> bool:
+
+def compare_activations(
+    mlx_tensor, hf_tensor, name: str, atol: float = 1e-5, rtol: float = 1e-4
+) -> bool:
     """Compare MLX and HuggingFace tensor activations."""
     try:
-        import mlx.core as mx
 
         # Handle batch dimension differences
         if len(mlx_tensor.shape) == 3 and len(hf_tensor.shape) == 3:
@@ -32,13 +35,15 @@ def compare_activations(mlx_tensor, hf_tensor, name: str, atol: float = 1e-5, rt
         mean_diff = np.mean(np.abs(mlx_np - hf_np))
 
         status = "✅" if is_close else "❌"
-        print(f"    {status} {name}: Match={is_close} | Max diff: {max_diff:.2e} | Mean diff: {mean_diff:.2e}")
+        print(
+            f"    {status} {name}: Match={is_close} | Max diff: {max_diff:.2e} | Mean diff: {mean_diff:.2e}"
+        )
 
         if not is_close:
             relative_diff = max_diff / (np.mean(np.abs(hf_np)) + 1e-8)
             print(f"        Relative diff: {relative_diff:.2e}")
             if max_diff > 1.0:
-                print(f"        🚨 CRITICAL: Very large absolute differences!")
+                print("        🚨 CRITICAL: Very large absolute differences!")
                 print(f"        MLX sample: {mlx_np.flat[:5]}")
                 print(f"        HF sample:  {hf_np.flat[:5]}")
 
@@ -47,6 +52,7 @@ def compare_activations(mlx_tensor, hf_tensor, name: str, atol: float = 1e-5, rt
     except Exception as e:
         print(f"    ❌ {name}: Error during comparison - {e}")
         return False
+
 
 def debug_attention_internals(mlx_attn, hf_attn, mlx_input, hf_input):
     """Deep dive into attention mechanism internals."""
@@ -85,8 +91,12 @@ def debug_attention_internals(mlx_attn, hf_attn, mlx_input, hf_input):
         head_dim = mlx_attn.head_dim
 
         mlx_q_reshaped = mlx_q.reshape(B, L, num_heads, head_dim).transpose(0, 2, 1, 3)
-        mlx_k_reshaped = mlx_k.reshape(B, L, mlx_attn.num_key_value_heads, head_dim).transpose(0, 2, 1, 3)
-        mlx_v_reshaped = mlx_v.reshape(B, L, mlx_attn.num_key_value_heads, head_dim).transpose(0, 2, 1, 3)
+        mlx_k_reshaped = mlx_k.reshape(B, L, mlx_attn.num_key_value_heads, head_dim).transpose(
+            0, 2, 1, 3
+        )
+        mlx_v_reshaped = mlx_v.reshape(B, L, mlx_attn.num_key_value_heads, head_dim).transpose(
+            0, 2, 1, 3
+        )
 
         with torch.no_grad():
             hf_q_reshaped = hf_q.view(B, L, num_heads, head_dim).transpose(1, 2)
@@ -102,10 +112,12 @@ def debug_attention_internals(mlx_attn, hf_attn, mlx_input, hf_input):
         mlx_k_rope = mlx_attn.rope(mlx_k_reshaped)
 
         # HuggingFace RoPE (more complex to replicate exactly)
-        print("          ⚠️  RoPE comparison needs HF position embeddings - checking attention scores instead")
+        print(
+            "          ⚠️  RoPE comparison needs HF position embeddings - checking attention scores instead"
+        )
 
         # Compare attention scores (after RoPE)
-        mlx_scores = mx.matmul(mlx_q_rope, mlx_k_rope.transpose(0, 1, 3, 2)) / (head_dim ** 0.5)
+        mlx_scores = mx.matmul(mlx_q_rope, mlx_k_rope.transpose(0, 1, 3, 2)) / (head_dim**0.5)
 
         # For HF, we'd need to apply their RoPE implementation, which is complex
         # So let's check if the issue is in basic matrix operations
@@ -116,8 +128,10 @@ def debug_attention_internals(mlx_attn, hf_attn, mlx_input, hf_input):
     except Exception as e:
         print(f"          ❌ Error in attention deep dive: {e}")
         import traceback
+
         traceback.print_exc()
         return "attention_error"
+
 
 def debug_mlp_internals(mlx_mlp, hf_mlp, mlx_input, hf_input):
     """Deep dive into MLP internals."""
@@ -144,6 +158,7 @@ def debug_mlp_internals(mlx_mlp, hf_mlp, mlx_input, hf_input):
 
         # Compare activation (SiLU)
         import mlx.nn as nn
+
         mlx_activated = nn.silu(mlx_gate) * mlx_up
         with torch.no_grad():
             hf_activated = torch.nn.functional.silu(hf_gate) * hf_up
@@ -168,6 +183,7 @@ def debug_mlp_internals(mlx_mlp, hf_mlp, mlx_input, hf_input):
         print(f"          ❌ Error in MLP deep dive: {e}")
         return "mlp_error"
 
+
 def debug_layer_internals(mlx_layer, hf_layer, mlx_input, hf_input, layer_idx: int):
     """
     Performs a deep dive into a single transformer layer to find the
@@ -176,7 +192,6 @@ def debug_layer_internals(mlx_layer, hf_layer, mlx_input, hf_input, layer_idx: i
     print(f"\n🔍 === LAYER {layer_idx} DEEP DIVE ===")
 
     try:
-        import mlx.core as mx
 
         # 1. Input LayerNorm
         print("\n  📍 Step 1: Input LayerNorm")
@@ -200,7 +215,9 @@ def debug_layer_internals(mlx_layer, hf_layer, mlx_input, hf_input, layer_idx: i
         if not compare_activations(mlx_attn_out, hf_attn_out, "Self-Attention Output"):
             print("    🎯 ROOT CAUSE: Self-Attention mechanism!")
             # Deep dive into attention
-            attention_issue = debug_attention_internals(mlx_layer.self_attn, hf_layer.self_attn, mlx_norm_out, hf_norm_out)
+            attention_issue = debug_attention_internals(
+                mlx_layer.self_attn, hf_layer.self_attn, mlx_norm_out, hf_norm_out
+            )
             return f"attention_{attention_issue}"
 
         # 3. First Residual Connection
@@ -232,7 +249,9 @@ def debug_layer_internals(mlx_layer, hf_layer, mlx_input, hf_input, layer_idx: i
         if not compare_activations(mlx_mlp_out, hf_mlp_out, "MLP Output"):
             print("    🎯 ROOT CAUSE: MLP block!")
             # Deep dive into MLP
-            mlp_issue = debug_mlp_internals(mlx_layer.mlp, hf_layer.mlp, mlx_post_norm_out, hf_post_norm_out)
+            mlp_issue = debug_mlp_internals(
+                mlx_layer.mlp, hf_layer.mlp, mlx_post_norm_out, hf_post_norm_out
+            )
             return f"mlp_{mlp_issue}"
 
         # 6. Second Residual Connection
@@ -251,8 +270,10 @@ def debug_layer_internals(mlx_layer, hf_layer, mlx_input, hf_input, layer_idx: i
     except Exception as e:
         print(f"    ❌ Error in layer deep dive: {e}")
         import traceback
+
         traceback.print_exc()
         return "layer_error"
+
 
 def run_layer_by_layer_comparison():
     """Main function to run layer-by-layer comparison with deep dive."""
@@ -260,9 +281,9 @@ def run_layer_by_layer_comparison():
     print("=" * 60)
 
     try:
+        import mlx.core as mx
         from finetune.models.manager import ModelManager
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        import mlx.core as mx
 
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
@@ -292,7 +313,7 @@ def run_layer_by_layer_comparison():
         mlx_hidden = mlx_model.embed_tokens(mlx_input)
         hf_hidden = hf_model.model.embed_tokens(hf_input)
 
-        print(f"\n📊 Starting layer-by-layer analysis...")
+        print("\n📊 Starting layer-by-layer analysis...")
 
         if not compare_activations(mlx_hidden, hf_hidden, "Initial Embeddings"):
             print("💥 CRITICAL: Embeddings diverge!")
@@ -320,7 +341,7 @@ def run_layer_by_layer_comparison():
             # Check layer output
             if not compare_activations(mlx_hidden, hf_hidden, f"Layer {i} Output", atol=1e-4):
                 print(f"\n💥 DIVERGENCE FOUND IN LAYER {i}!")
-                print(f"🔍 Starting deep dive analysis...")
+                print("🔍 Starting deep dive analysis...")
 
                 # Perform deep dive
                 issue = debug_layer_internals(
@@ -328,14 +349,14 @@ def run_layer_by_layer_comparison():
                     hf_model.model.layers[i],
                     mlx_layer_input,
                     hf_layer_input,
-                    i
+                    i,
                 )
 
                 print(f"\n🎯 FINAL DIAGNOSIS: Layer {i} - {issue}")
                 return f"layer_{i}_{issue}"
 
         # Check final components
-        print(f"\n📍 === Final Model Components ===")
+        print("\n📍 === Final Model Components ===")
 
         # Final LayerNorm
         mlx_final_norm = mlx_model.norm(mlx_hidden)
@@ -347,7 +368,11 @@ def run_layer_by_layer_comparison():
             return "final_layernorm"
 
         # Language model head
-        mlx_logits = mlx_model.lm_head(mlx_final_norm) if mlx_model.lm_head else mx.matmul(mlx_final_norm, mlx_model.embed_tokens.weight.T)
+        mlx_logits = (
+            mlx_model.lm_head(mlx_final_norm)
+            if mlx_model.lm_head
+            else mx.matmul(mlx_final_norm, mlx_model.embed_tokens.weight.T)
+        )
         with torch.no_grad():
             hf_logits = hf_model.lm_head(hf_final_norm)
 
@@ -361,8 +386,10 @@ def run_layer_by_layer_comparison():
     except Exception as e:
         print(f"💥 CRITICAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return "error"
+
 
 if __name__ == "__main__":
     result = run_layer_by_layer_comparison()

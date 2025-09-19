@@ -415,7 +415,6 @@ def _run_controlled_fine_tuning(config: dict[str, Any], temp_dir: Path) -> Train
 def _estimate_model_memory(model) -> float:
     """Estimate model memory usage in MB."""
     try:
-
         total_size = 0
 
         if hasattr(model, "parameters"):
@@ -456,7 +455,6 @@ def _estimate_model_memory(model) -> float:
 def _generate_safe(model, prompt: str, max_tokens: int = 10) -> str:
     """Safely generate text from model with error handling."""
     try:
-
         # Simple tokenization - split on spaces and take first few words for testing
         words = prompt.split()[:8]  # Limit input length
 

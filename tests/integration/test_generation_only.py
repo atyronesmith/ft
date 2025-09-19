@@ -61,7 +61,7 @@ def test_generation_only():
 
     # Test different generation strategies including Ollama defaults
     strategies = [
-        ("Greedy (temp=0.0)", GenerationConfig(max_tokens=15, temperature=0.0)),
+        ("Greedy (temp=0.0)", GenerationConfig(max_tokens=15, temperature=0.0, verbose=True)),
         ("Ollama Defaults", GenerationConfig.ollama_defaults()),
         ("Ollama for Q&A", GenerationConfig.for_factual_qa()),
         (

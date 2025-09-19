@@ -113,11 +113,10 @@ class MLXTextGenerator:
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
         """Format text using TinyLlama's native HuggingFace chat template."""
         try:
-            # CORRECTED: Use HuggingFace's native chat template which is what the model was trained on
-            # This should give us the exact format that produces good results
+            # CORRECTED: Use HuggingFace's native chat template - simple user message works best
+            # Analysis shows adding system message causes "Can you'sure" responses
             if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template:
-                # First try simple user message (no system message)
-                # This matches what works well in many cases
+                # Simple user message format works well for most countries
                 messages = [{"role": "user", "content": text}]
                 formatted_prompt = self.tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
@@ -125,6 +124,12 @@ class MLXTextGenerator:
 
                 self._debug("Using HF native chat template")
                 self._debug(f"Template format: {repr(formatted_prompt[:100])}...")
+
+                # Print exact template to stdout in verbose mode
+                if self.config.verbose:
+                    print(f"\n=== EXACT TEMPLATE SENT TO MODEL ===")
+                    print(repr(formatted_prompt))
+                    print(f"=== END TEMPLATE ===\n")
 
                 input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="np")[0].tolist()
                 return formatted_prompt, input_ids

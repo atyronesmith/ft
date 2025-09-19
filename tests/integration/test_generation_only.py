@@ -11,13 +11,11 @@ from pathlib import Path
 
 import mlx.core as mx
 import pytest
-from transformers import AutoTokenizer
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from finetune.inference.generation import GenerationConfig, generate_text
-from finetune.models.manager import ModelManager
+from finetune.inference.generation import GenerationConfig, generate_text, load_model_and_tokenizer
 
 VERBOSE = os.environ.get("FT_VERBOSE", "0") == "1"
 MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -33,11 +31,9 @@ def test_generation_only():
     """Test model generation without any training."""
     _vprint("🧪 Testing generation-only functionality...")
 
-    # Load model and tokenizer
-    _vprint(f"Loading model: {MODEL_ID}")
-    manager = ModelManager()
-    model = manager.load_model(MODEL_ID)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    # Load model and tokenizer with special tokens properly registered
+    _vprint(f"Loading model with special tokens: {MODEL_ID}")
+    model, tokenizer = load_model_and_tokenizer(MODEL_ID)
     model.eval()
 
     _vprint(f"✅ Model loaded with {model.num_parameters:,} parameters")
@@ -132,10 +128,8 @@ def test_single_question_detailed():
     """Test a single question with detailed debugging."""
     _vprint("🔍 Detailed single question test...")
 
-    # Load model
-    manager = ModelManager()
-    model = manager.load_model(MODEL_ID)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    # Load model with special tokens properly registered
+    model, tokenizer = load_model_and_tokenizer(MODEL_ID)
     model.eval()
 
     question = "What is the capital of France?"

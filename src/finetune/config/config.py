@@ -60,7 +60,7 @@ class DataConfig:
                 raise ConfigError(f"Validation file does not exist: {self.validation_file}")
 
         # Validate template name
-        valid_templates = ["alpaca", "chatml", "llama"]
+        valid_templates = ["alpaca", "chatml", "llama", "tinyllama"]
         if self.template not in valid_templates:
             raise ConfigError(
                 f"Unknown template '{self.template}'. Valid options: {valid_templates}"

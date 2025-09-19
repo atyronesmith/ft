@@ -483,7 +483,7 @@ def _train_with_workflow(
     workflow = create_quick_workflow(
         model_name=model_id,
         data_file=str(train_file),
-        template="chatml",
+        template="tinyllama",  # Use TinyLlama's native template format
         output_dir=str(out_dir),
     )
 
@@ -556,7 +556,7 @@ def _train_with_workflow(
             from finetune.data.templates import TemplateRegistry
 
             template_registry = TemplateRegistry()
-            template = template_registry.get_template("chatml")
+            template = template_registry.get_template("tinyllama")
 
             # CORRECTED: Ensure baseline model is also in evaluation mode for consistency
             workflow.model.eval()

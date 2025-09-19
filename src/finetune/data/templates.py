@@ -180,6 +180,25 @@ class LlamaTemplate(PromptTemplate):
             return prompt
 
 
+class TinyLlamaTemplate(PromptTemplate):
+    """TinyLlama chat template matching the native format."""
+
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
+        """Format data using TinyLlama's native chat template format."""
+        if "instruction" not in data:
+            raise TemplateError("Missing required field 'instruction'")
+
+        # TinyLlama native format: <|user|>\n{instruction}</s>\n<|assistant|>\n{output}
+        prompt = f"<|user|>\n{data['instruction']}</s>\n<|assistant|>\n"
+
+        if not for_inference:
+            if "output" not in data:
+                raise TemplateError("Missing required field 'output'")
+            prompt += data['output']
+
+        return prompt
+
+
 class CustomTemplate(PromptTemplate):
     """Custom template using format string."""
 
@@ -226,6 +245,7 @@ class TemplateRegistry:
             "alpaca": AlpacaTemplate(),
             "chatml": ChatMLTemplate(),
             "llama": LlamaTemplate(),
+            "tinyllama": TinyLlamaTemplate(),
         }
 
     def register_template(self, name: str, template: PromptTemplate) -> None:

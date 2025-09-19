@@ -337,60 +337,35 @@ if MLX_AVAILABLE:
 
         def update(self, parameters: dict):
             """Custom update method to handle list-based layers."""
-            # Handle top-level parameters normally
-            top_level_params = {}
+            # Separate layer parameters from top-level parameters
             layer_params = {}
+            top_level_params = {}
             for key, value in parameters.items():
-                if key.startswith("layers."):
-                    # Extract layer index and parameter path
-                    parts = key.split(".", 2)  # ['layers', '0', 'self_attn.q_proj.weight']
-                    layer_idx = int(parts[1])
-                    param_path = parts[2]
-                    if layer_idx not in layer_params:
-                        layer_params[layer_idx] = {}
-                    # Rebuild nested structure for this layer
-                    current = layer_params[layer_idx]
-                    path_parts = param_path.split(".")
-                    for part in path_parts[:-1]:
-                        if part not in current:
-                            current[part] = {}
-                        current = current[part]
-                    current[path_parts[-1]] = value
+                if key == "layers":
+                    layer_params = value
                 else:
-                    # Handle nested top-level parameters
-                    if "." in key:
-                        parts = key.split(".")
-                        current = top_level_params
-                        for part in parts[:-1]:
-                            if part not in current:
-                                current[part] = {}
-                            current = current[part]
-                        current[parts[-1]] = value
-                    else:
-                        top_level_params[key] = value
+                    top_level_params[key] = value
 
-            # Update top-level parameters normally
+            # Update top-level parameters using the parent method
             if top_level_params:
-                nn.Module.update(self, top_level_params)
+                super().update(top_level_params)
 
-            # Update each layer individually
-            for layer_idx, layer_weights in layer_params.items():
-                if layer_idx < len(self.layers):
-                    self.layers[layer_idx].update(layer_weights)
+            # Update each layer individually from the nested dictionary
+            if layer_params:
+                for i, layer_weights in layer_params.items():
+                    layer_index = int(i)
+                    if layer_index < len(self.layers):
+                        self.layers[layer_index].update(layer_weights)
 
         def parameters(self):
-            """Return named parameters for training compatibility (MLX arrays).
+            """Return all parameters for the model, including nested layers."""
+            # Start with parameters from the base Module (e.g., embed_tokens, norm, lm_head)
+            params = dict(super().parameters())
 
-            Traverses the parameter tree produced by self.parameters() and yields
-            (dotted_name, parameter) pairs similar to PyTorch.
-            """
-            params = flatten_params(super().parameters())
-            if hasattr(self, "layers") and isinstance(self.layers, list):
-                for i, layer in enumerate(self.layers):
-                    if isinstance(layer, nn.Module):
-                        layer_params = flatten_params(layer.parameters())
-                        for k, v in layer_params.items():
-                            params[f"layers.{i}.{k}"] = v
+            # Manually add the parameters from each layer in the list
+            for i, layer in enumerate(self.layers):
+                params[f"layers.{i}"] = dict(layer.parameters())
+
             return params
 
         def named_parameters(self):

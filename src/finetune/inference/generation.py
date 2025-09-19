@@ -111,41 +111,42 @@ class MLXTextGenerator:
             logger.debug(message)
 
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
-        """Format text using TinyLlama's native HuggingFace chat template."""
-        try:
-            # CORRECTED: Use HuggingFace's native chat template - simple user message works best
-            # Analysis shows adding system message causes "Can you'sure" responses
-            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template:
-                # Simple user message format works well for most countries
-                messages = [{"role": "user", "content": text}]
-                formatted_prompt = self.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
+        """Format text for TinyLlama using a Q&A format that signals answering."""
+        # Use a Q&A format that clearly signals the model should provide an answer
+        # simple_prompt = f"Q: {text}\nA:"
 
-                self._debug("Using HF native chat template")
-                self._debug(f"Template format: {repr(formatted_prompt[:100])}...")
+        # Use the default system prompt if none is provided.
+        # if system_prompt is None:
+        system_prompt = "You are a helpful AI assistant."
 
-                # Print exact template to stdout in verbose mode
-                if self.config.verbose:
-                    print(f"\n=== EXACT TEMPLATE SENT TO MODEL ===")
-                    print(repr(formatted_prompt))
-                    print(f"=== END TEMPLATE ===\n")
+        # Construct the final prompt string using the exact multi-line format.
+        # It includes the BOS token (<s>), system/user turns, and the final assistant prompt.
+        simple_prompt = (
+          f"<|system|>\n{system_prompt}</s>\n"
+          f"<|user|>\n{text}</s>\n"
+          f"<|assistant|>"
+        )
 
-                input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="np")[0].tolist()
-                return formatted_prompt, input_ids
-            else:
-                # Fallback if no chat template
-                self._debug("No chat template found, using simple format")
-                simple_prompt = f"Question: {text}\nAnswer:"
-                input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
-                return simple_prompt, input_ids
+        # Encode with BOS token for proper generation
+        input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
 
-        except Exception as e:
-            self._debug(f"Chat template failed: {e}, falling back to simple format")
-            # Final fallback to simple format
-            simple_prompt = f"Question: {text}\nAnswer:"
-            input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
-            return simple_prompt, input_ids
+        # Ensure BOS token is included for proper generation
+        if self.tokenizer.bos_token_id is not None and input_ids[0] != self.tokenizer.bos_token_id:
+            input_ids = [self.tokenizer.bos_token_id] + input_ids
+            simple_prompt = self.tokenizer.decode(input_ids)
+
+        self._debug("Using Q&A prompt format")
+        self._debug(f"Template format: {repr(simple_prompt[:100])}...")
+        print("Input IDs:", input_ids)
+        print("Input IDs (as tokens):", [self.tokenizer.decode([tid]) for tid in input_ids])
+
+        # Print exact template to stdout in verbose mode
+        if self.config.verbose:
+            print(f"\n=== EXACT TEMPLATE SENT TO MODEL ===")
+            print(repr(simple_prompt))
+            print(f"=== END TEMPLATE ===\n")
+
+        return simple_prompt, input_ids
 
     def _sample_next_token(self, logits: Any, temperature: float, top_p: float, top_k: int) -> int:
         """Sample next token with Ollama-compatible sampling strategy.
@@ -374,6 +375,118 @@ class MLXTextGenerator:
             return f"[Error: {e}]"
 
 
+def create_tokenizer_with_special_tokens(model_id: str):
+    """Create tokenizer with special tokens properly registered."""
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+    # Add special tokens if they don't exist
+    special_tokens = {
+        "additional_special_tokens": ["<|system|>", "<|user|>", "<|assistant|>"]
+    }
+
+    # Only add tokens that aren't already in the tokenizer
+    new_tokens = []
+    for token in special_tokens["additional_special_tokens"]:
+        if token not in tokenizer.get_vocab():
+            new_tokens.append(token)
+
+    if new_tokens:
+        logger.info(f"Adding {len(new_tokens)} special tokens: {new_tokens}")
+        tokenizer.add_special_tokens({"additional_special_tokens": new_tokens})
+
+    return tokenizer
+
+
+def load_model_with_special_tokens(model_id: str):
+    """Load model and tokenizer with special tokens properly configured."""
+    from finetune.models.manager import ModelManager
+
+    # Create tokenizer with special tokens
+    tokenizer = create_tokenizer_with_special_tokens(model_id)
+
+    # Load model with resized embedding matrix
+    manager = ModelManager()
+    model = manager.load_model(model_id, tokenizer=tokenizer)
+
+    # CRITICAL DEBUG VALIDATION
+    try:
+        # For MLX models, use flatten_params to properly count parameters
+        from finetune.models.mlx_models import flatten_params
+        flat_params = flatten_params(model.parameters())
+        param_count = sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+    except Exception:
+        # Fallback counting method
+        param_count = getattr(model, 'num_parameters', 0)
+
+    vocab_size = len(tokenizer)
+
+    logger.info(f"🔍 MODEL DEBUG VALIDATION:")
+    logger.info(f"   Model parameters: {param_count:,}")
+    logger.info(f"   Tokenizer vocab size: {vocab_size}")
+    logger.info(f"   Model config vocab size: {model.config.vocab_size}")
+
+    # Validate critical conditions
+    if param_count == 0:
+        raise ValueError("CRITICAL: Model loaded with 0 parameters!")
+
+    if vocab_size != model.config.vocab_size:
+        logger.warning(f"VOCAB MISMATCH: Tokenizer={vocab_size}, Model={model.config.vocab_size}")
+
+    # Test special tokens
+    special_tokens = ["<|system|>", "<|user|>", "<|assistant|>"]
+    for token in special_tokens:
+        token_ids = tokenizer.encode(token, add_special_tokens=False)
+        if len(token_ids) == 1:
+            logger.info(f"   ✅ {token} -> single token {token_ids[0]}")
+        else:
+            logger.warning(f"   ❌ {token} -> multiple tokens {token_ids}")
+
+    return model, tokenizer
+
+
+def load_model_and_tokenizer(model_id: str):
+    """Load model and tokenizer, ensuring they are correctly configured."""
+    from finetune.models.manager import ModelManager
+    from transformers import AutoTokenizer
+
+    # Load the tokenizer directly WITHOUT adding special tokens
+    # TinyLlama already has proper chat template support built-in
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+    # 2. Register the special chat tokens with the tokenizer
+    special_tokens_to_add = ["<|system|>", "<|user|>", "<|assistant|>"]
+    tokenizer.add_special_tokens({"additional_special_tokens": special_tokens_to_add})
+    # Load the model using standard tokenizer (no resizing needed)
+    manager = ModelManager()
+    model = manager.load_model(model_id, tokenizer=tokenizer)  # Don't pass custom tokenizer
+
+    # DEBUG VALIDATION
+    try:
+        from finetune.models.mlx_models import flatten_params
+        flat_params = flatten_params(model.parameters())
+        param_count = sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+    except Exception:
+        param_count = getattr(model, 'num_parameters', 0)
+
+    vocab_size = len(tokenizer)
+
+    logger.info(f"🔍 MODEL DEBUG VALIDATION:")
+    logger.info(f"   Model parameters: {param_count:,}")
+    logger.info(f"   Tokenizer vocab size: {vocab_size}")
+    logger.info(f"   Model config vocab size: {model.config.vocab_size}")
+
+    # Validate critical conditions
+    if param_count == 0:
+        raise ValueError("CRITICAL: Model loaded with 0 parameters!")
+
+    if vocab_size != model.config.vocab_size:
+        logger.info(f"VOCAB INFO: Using original TinyLlama vocab (tokenizer={vocab_size}, model={model.config.vocab_size})")
+
+    return model, tokenizer
+
+
 def generate_text(
     model,
     tokenizer,
@@ -393,6 +506,8 @@ def generate_text(
     Returns:
         Generated text string
     """
+    # Note: For proper special token support, use load_model_and_tokenizer()
+    # to ensure the model and tokenizer are properly synchronized
     generator = MLXTextGenerator(model, tokenizer, config)
     if debug_fn:
         generator.set_debug_callback(debug_fn)

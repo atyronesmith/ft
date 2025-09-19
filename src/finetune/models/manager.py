@@ -40,6 +40,7 @@ class ModelManager:
         load_in_4bit: bool = False,
         load_in_8bit: bool = False,
         device_map: str | None = None,
+        tokenizer=None,
         **kwargs,
     ) -> BaseModel:
         """Load a model from HuggingFace or local path."""
@@ -47,12 +48,12 @@ class ModelManager:
 
         # Check if it's a local path
         if Path(model_id).exists():
-            model = self.loader.load_from_path(Path(model_id))
+            model = self.loader.load_from_path(Path(model_id), tokenizer=tokenizer)
             model_name = Path(model_id).name
         else:
             # Load from HuggingFace
             model = self.loader.load_from_huggingface(
-                model_id, load_in_4bit=load_in_4bit, load_in_8bit=load_in_8bit, **kwargs
+                model_id, load_in_4bit=load_in_4bit, load_in_8bit=load_in_8bit, tokenizer=tokenizer, **kwargs
             )
             model_name = model_id
 

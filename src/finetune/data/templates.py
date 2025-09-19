@@ -7,7 +7,7 @@ with proper formatting and validation.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 from .exceptions import TemplateError
 
@@ -16,7 +16,7 @@ class PromptTemplate(ABC):
     """Abstract base class for prompt templates."""
 
     @abstractmethod
-    def format(self, data: Dict[str, Any], for_inference: bool = False) -> str:
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
         """
         Format data according to template.
 
@@ -32,7 +32,7 @@ class PromptTemplate(ABC):
         """
         pass
 
-    def format_batch(self, dataset: List[Dict[str, Any]], for_inference: bool = False) -> List[str]:
+    def format_batch(self, dataset: list[dict[str, Any]], for_inference: bool = False) -> list[str]:
         """
         Format a batch of data items.
 
@@ -49,7 +49,7 @@ class PromptTemplate(ABC):
 class AlpacaTemplate(PromptTemplate):
     """Alpaca instruction-following template."""
 
-    def format(self, data: Dict[str, Any], for_inference: bool = False) -> str:
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
         """Format data using Alpaca template."""
         if "instruction" not in data:
             raise TemplateError("Missing required field 'instruction'")
@@ -97,7 +97,7 @@ class ChatMLTemplate(PromptTemplate):
         """
         self.system_message = system_message
 
-    def format(self, data: Dict[str, Any], for_inference: bool = False) -> str:
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
         """Format data using ChatML template."""
         messages = []
 
@@ -141,7 +141,7 @@ class LlamaTemplate(PromptTemplate):
         """
         self.system_message = system_message
 
-    def format(self, data: Dict[str, Any], for_inference: bool = False) -> str:
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
         """Format data using Llama template."""
         if "messages" in data:
             # Multi-turn conversation
@@ -150,7 +150,9 @@ class LlamaTemplate(PromptTemplate):
                 user_msg = data["messages"][i]
                 if i + 1 < len(data["messages"]):
                     assistant_msg = data["messages"][i + 1]
-                    turn = f"<s>[INST] {user_msg['content']} [/INST] {assistant_msg['content']} </s>"
+                    turn = (
+                        f"<s>[INST] {user_msg['content']} [/INST] {assistant_msg['content']} </s>"
+                    )
                 else:
                     turn = f"<s>[INST] {user_msg['content']} [/INST] "
                 formatted_turns.append(turn)
@@ -202,11 +204,11 @@ class CustomTemplate(PromptTemplate):
             CustomTemplate instance
         """
         path_obj = Path(file_path)
-        with open(path_obj, 'r', encoding='utf-8') as f:
+        with open(path_obj, encoding="utf-8") as f:
             template_content = f.read()
         return cls(template_content)
 
-    def format(self, data: Dict[str, Any], for_inference: bool = False) -> str:
+    def format(self, data: dict[str, Any], for_inference: bool = False) -> str:
         """Format data using custom template."""
         try:
             return self.template_string.format(**data)
@@ -253,7 +255,7 @@ class TemplateRegistry:
             raise TemplateError(f"Unknown template '{name}'")
         return self._templates[name]
 
-    def list_templates(self) -> List[str]:
+    def list_templates(self) -> list[str]:
         """
         List available template names.
 

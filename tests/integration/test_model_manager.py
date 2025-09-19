@@ -2,13 +2,12 @@
 Integration tests for model manager.
 """
 
-import pytest
 import json
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
 import tempfile
-import shutil
+from pathlib import Path
+from unittest.mock import Mock, patch
 
+import pytest
 from finetune.models.base import ModelConfig
 
 
@@ -33,10 +32,11 @@ class TestModelManager:
                     yield mgr
                 finally:
                     # Ensure cleanup
-                    if hasattr(mgr, 'registry') and mgr.registry:
+                    if hasattr(mgr, "registry") and mgr.registry:
                         mgr.registry.close()
                     # Force cleanup
                     import gc
+
                     gc.collect()
 
     def test_manager_initialization(self, temp_dir):
@@ -59,7 +59,7 @@ class TestModelManager:
                 assert manager.loader is not None
 
                 # Cleanup
-                if hasattr(manager, 'registry') and manager.registry:
+                if hasattr(manager, "registry") and manager.registry:
                     manager.registry.close()
 
     def test_manager_pytorch_fallback(self, temp_dir):
@@ -76,7 +76,7 @@ class TestModelManager:
                 assert manager.loader is not None
 
                 # Cleanup
-                if hasattr(manager, 'registry') and manager.registry:
+                if hasattr(manager, "registry") and manager.registry:
                     manager.registry.close()
 
     def test_list_cached_models(self, manager, temp_dir):
@@ -365,7 +365,7 @@ class TestEndToEndModelLoading:
 
             # Create minimal weights in PyTorch format for the loader to convert
             import torch
-            
+
             weights = {
                 "wte.weight": torch.randn(100, 32),
                 "wpe.weight": torch.randn(128, 32),
@@ -423,5 +423,5 @@ class TestEndToEndModelLoading:
                         mock_load.assert_called_once()
                 finally:
                     # Cleanup
-                    if hasattr(manager, 'registry') and manager.registry:
+                    if hasattr(manager, "registry") and manager.registry:
                         manager.registry.close()

@@ -2,11 +2,10 @@
 Unit tests for base model classes.
 """
 
-import pytest
-import json
 from pathlib import Path
 
-from finetune.models.base import ModelConfig, BaseModel, ModelLoader
+import pytest
+from finetune.models.base import BaseModel, ModelConfig, ModelLoader
 
 
 class TestModelConfig:

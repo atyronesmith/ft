@@ -23,7 +23,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🧪 Testing$(NC)"
-	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-mlx|test-e2e-all|test-e2e-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-mlx|test-e2e-all|test-e2e-quick|test-generation):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🔍 Code Quality$(NC)"
@@ -208,6 +208,12 @@ test-e2e-quick: ## Run quick end-to-end validation (workflow + real model, no Ol
 	@$(MAKE) test-e2e-workflow
 	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
 	@echo "$(GREEN)✅ Quick end-to-end validation completed!$(NC)"
+
+test-generation: ## Run generation-only test (no training, just model inference)
+	@echo "$(BLUE)Running generation-only test...$(NC)"
+	@echo "$(YELLOW)Testing model generation capabilities with various sampling strategies...$(NC)"
+	PYTHONPATH=src FT_VERBOSE=1 .venv/bin/python -m pytest tests/integration/test_generation_only.py -v --color=yes -s
+	@echo "$(GREEN)✅ Generation test completed!$(NC)"
 
 lint: ## Run linting checks
 	@echo "$(BLUE)Running linters...$(NC)"

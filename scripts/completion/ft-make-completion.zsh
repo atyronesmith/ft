@@ -6,4 +6,3 @@ _make_targets() {
     _describe 'make targets' targets
 }
 _make_targets
-

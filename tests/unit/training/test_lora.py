@@ -5,21 +5,15 @@ Tests are written first following TDD approach to drive the implementation
 of MLX-native LoRA layers for efficient fine-tuning.
 """
 
-import pytest
-import mlx.core as mx
-import mlx.nn as nn
-import numpy as np
-from unittest.mock import Mock, patch
 
+import mlx.core as mx
+import pytest
 from finetune.training.lora import (
     LoRAConfig,
-    LoRALinear as MLXLoRALinear,  # Alias for consistency with test names
-    apply_lora_to_model,
-    get_lora_trainable_params,
-    save_lora_weights,
-    load_lora_weights,
 )
-from finetune.models.base import BaseModel
+from finetune.training.lora import (
+    LoRALinear as MLXLoRALinear,  # Alias for consistency with test names
+)
 
 
 class TestLoRAConfig:
@@ -27,12 +21,7 @@ class TestLoRAConfig:
 
     def test_lora_config_creation(self):
         """Test LoRA config creates with valid parameters."""
-        config = LoRAConfig(
-            r=16,
-            alpha=32,
-            dropout=0.1,
-            target_modules=["q_proj", "v_proj"]
-        )
+        config = LoRAConfig(r=16, alpha=32, dropout=0.1, target_modules=["q_proj", "v_proj"])
 
         assert config.r == 16
         assert config.alpha == 32
@@ -84,9 +73,9 @@ class TestMLXLoRALinear:
         layer = MLXLoRALinear(in_features, out_features, config)
 
         # Assert
-        assert hasattr(layer, 'base')
-        assert hasattr(layer, 'lora_a')
-        assert hasattr(layer, 'lora_b')
+        assert hasattr(layer, "base")
+        assert hasattr(layer, "lora_a")
+        assert hasattr(layer, "lora_b")
 
         # Check parameter shapes
         assert layer.lora_a.shape == (rank, in_features)
@@ -150,7 +139,7 @@ class TestMLXLoRALinear:
         # Assert
         # Base layer should not require gradients (frozen)
         # This test will be expanded when we implement freezing mechanism
-        assert hasattr(layer.base, 'weight')
+        assert hasattr(layer.base, "weight")
         assert layer.base.weight.shape == (256, 256)
 
     def test_lora_layer_with_dropout(self):
@@ -162,17 +151,17 @@ class TestMLXLoRALinear:
 
         # This test will be expanded when dropout is implemented
         # For now, just verify the layer can be created with dropout config
-        assert hasattr(layer, 'dropout')
+        assert hasattr(layer, "dropout")
         # Check dropout is configured (MLX dropout doesn't expose rate directly)
         assert layer.dropout is not None
 
     def test_lora_layer_different_ranks(self):
         """Test LoRA layer works with different rank values."""
         configs_and_expected = [
-            (4, 4 * (64 + 64)),   # rank=4
-            (8, 8 * (64 + 64)),   # rank=8
-            (16, 16 * (64 + 64)), # rank=16
-            (32, 32 * (64 + 64)), # rank=32
+            (4, 4 * (64 + 64)),  # rank=4
+            (8, 8 * (64 + 64)),  # rank=8
+            (16, 16 * (64 + 64)),  # rank=16
+            (32, 32 * (64 + 64)),  # rank=32
         ]
 
         for rank, expected_params in configs_and_expected:
@@ -234,10 +223,7 @@ class TestLoRAIntegration:
 def sample_lora_config():
     """Provide a standard LoRA config for testing."""
     return LoRAConfig(
-        rank=16,
-        alpha=32,
-        dropout=0.05,
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"]
+        rank=16, alpha=32, dropout=0.05, target_modules=["q_proj", "v_proj", "k_proj", "o_proj"]
     )
 
 

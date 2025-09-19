@@ -5,10 +5,12 @@ Provides predefined configurations for chat, instruction-following,
 code generation, and other common fine-tuning scenarios.
 """
 
-from typing import Dict, List
 from copy import deepcopy
 
-from .config import TrainingConfig, ModelConfig, DataConfig, LoRAConfig, OptimizationConfig, ConfigError
+from .config import (
+    ConfigError,
+    TrainingConfig,
+)
 
 
 class ConfigProfile:
@@ -24,15 +26,15 @@ class ConfigProfile:
                 "r": 8,
                 "alpha": 16.0,
                 "dropout": 0.1,
-                "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj"]
+                "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj"],
             },
             "optimization": {
                 "learning_rate": 2e-4,
                 "batch_size": 2,
                 "epochs": 3,
                 "warmup_steps": 100,
-                "lr_scheduler": "cosine"
-            }
+                "lr_scheduler": "cosine",
+            },
         },
         "instruction": {
             "data": {
@@ -43,15 +45,15 @@ class ConfigProfile:
                 "r": 16,
                 "alpha": 32.0,
                 "dropout": 0.05,
-                "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj"]
+                "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj"],
             },
             "optimization": {
                 "learning_rate": 3e-4,
                 "batch_size": 4,
                 "epochs": 3,
                 "warmup_steps": 200,
-                "lr_scheduler": "linear"
-            }
+                "lr_scheduler": "linear",
+            },
         },
         "code": {
             "data": {
@@ -62,7 +64,15 @@ class ConfigProfile:
                 "r": 32,
                 "alpha": 64.0,
                 "dropout": 0.05,
-                "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+                "target_modules": [
+                    "q_proj",
+                    "v_proj",
+                    "k_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ],
             },
             "optimization": {
                 "learning_rate": 1e-4,
@@ -70,9 +80,9 @@ class ConfigProfile:
                 "epochs": 5,
                 "warmup_steps": 500,
                 "lr_scheduler": "cosine",
-                "weight_decay": 0.01
-            }
-        }
+                "weight_decay": 0.01,
+            },
+        },
     }
 
     @classmethod
@@ -96,10 +106,7 @@ class ConfigProfile:
         profile_data = deepcopy(cls._PROFILES[profile_name])
 
         # Create a minimal config and apply profile
-        base_config = {
-            "model": {"name": "placeholder"},
-            "data": {"train_file": "placeholder"}
-        }
+        base_config = {"model": {"name": "placeholder"}, "data": {"train_file": "placeholder"}}
 
         # Merge profile data
         for section, settings in profile_data.items():
@@ -111,7 +118,7 @@ class ConfigProfile:
         return TrainingConfig.from_dict(base_config)
 
     @classmethod
-    def list_profiles(cls) -> List[str]:
+    def list_profiles(cls) -> list[str]:
         """
         List available profile names.
 
@@ -153,7 +160,7 @@ class ConfigProfile:
         return TrainingConfig.from_dict(config_dict)
 
     @classmethod
-    def create_profile(cls, name: str, profile_data: Dict) -> None:
+    def create_profile(cls, name: str, profile_data: dict) -> None:
         """
         Create a new custom profile.
 

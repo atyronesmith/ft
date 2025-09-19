@@ -33,9 +33,9 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
-from typing import Dict, List, Any, NamedTuple
+from typing import Any, NamedTuple
+
 import pytest
 
 # Test availability checks
@@ -46,14 +46,15 @@ VERBOSE_OUTPUT = os.environ.get("FT_VERBOSE", "0") == "1"
 
 class TrainingResults(NamedTuple):
     """Results from a controlled fine-tuning run."""
-    losses: List[float]
+
+    losses: list[float]
     model: Any
-    test_cases: List[Dict[str, str]]
+    test_cases: list[dict[str, str]]
     output_dir: Path
     base_memory_mb: float
     lora_memory_mb: float
-    pre_training_outputs: Dict[str, str]
-    post_training_outputs: Dict[str, str]
+    pre_training_outputs: dict[str, str]
+    post_training_outputs: dict[str, str]
 
 
 pytestmark = [
@@ -79,13 +80,14 @@ def _get_available_memory_gb() -> float:
     """Get available system memory in GB."""
     try:
         import psutil
+
         return psutil.virtual_memory().available / (1024**3)
     except ImportError:
         # Conservative estimate if psutil not available
         return 8.0
 
 
-def _get_optimal_test_config() -> Dict[str, Any]:
+def _get_optimal_test_config() -> dict[str, Any]:
     """Get test configuration based on available resources."""
     available_memory = _get_available_memory_gb()
     _verbose_print(f"Available system memory: {available_memory:.1f}GB", "💾")
@@ -97,7 +99,7 @@ def _get_optimal_test_config() -> Dict[str, Any]:
             "max_length": 128,
             "epochs": 3,
         }
-        _verbose_print(f"Using high-memory config for >16GB system", "⚙️")
+        _verbose_print("Using high-memory config for >16GB system", "⚙️")
         _verbose_print(f"Config details: {config}")
         return config
     elif available_memory > 8:
@@ -107,7 +109,7 @@ def _get_optimal_test_config() -> Dict[str, Any]:
             "max_length": 64,
             "epochs": 2,
         }
-        _verbose_print(f"Using medium-memory config for >8GB system", "⚙️")
+        _verbose_print("Using medium-memory config for >8GB system", "⚙️")
         _verbose_print(f"Config details: {config}")
         return config
     else:
@@ -115,7 +117,7 @@ def _get_optimal_test_config() -> Dict[str, Any]:
         pytest.skip("Insufficient memory for real model testing (need >8GB)")
 
 
-def _create_deterministic_training_data() -> List[Dict[str, str]]:
+def _create_deterministic_training_data() -> list[dict[str, str]]:
     """Create small, structured dataset with measurable learning objectives."""
     data = [
         # Geography facts (easy to verify)
@@ -123,13 +125,11 @@ def _create_deterministic_training_data() -> List[Dict[str, str]]:
         {"instruction": "What is the capital of Germany?", "output": "Berlin"},
         {"instruction": "What is the capital of Italy?", "output": "Rome"},
         {"instruction": "What is the capital of Spain?", "output": "Madrid"},
-
         # Simple math (objective correctness)
         {"instruction": "What is 2 + 2?", "output": "4"},
         {"instruction": "What is 5 + 3?", "output": "8"},
         {"instruction": "What is 10 - 7?", "output": "3"},
         {"instruction": "What is 6 + 4?", "output": "10"},
-
         # Pattern completion (measurable consistency)
         {"instruction": "Complete: The sky is", "output": "blue"},
         {"instruction": "Complete: Grass is", "output": "green"},
@@ -146,7 +146,7 @@ class TrainingSuccessValidator:
     """Validates training success using objective metrics."""
 
     @staticmethod
-    def validate_loss_convergence(losses: List[float], min_reduction: float = 0.05) -> bool:
+    def validate_loss_convergence(losses: list[float], min_reduction: float = 0.05) -> bool:
         """Validate that training loss decreases meaningfully."""
         if len(losses) < 2:
             return False
@@ -162,7 +162,7 @@ class TrainingSuccessValidator:
             return losses[-1] < losses[0]
 
         # For longer sequences, check for general downward trend (allow some fluctuation)
-        downward_steps = sum(1 for i in range(len(losses)-1) if losses[i+1] <= losses[i])
+        downward_steps = sum(1 for i in range(len(losses) - 1) if losses[i + 1] <= losses[i])
         if downward_steps < len(losses) * 0.6:  # At least 60% of steps should decrease
             return False
 
@@ -170,9 +170,7 @@ class TrainingSuccessValidator:
 
     @staticmethod
     def validate_model_learning(
-        pre_outputs: Dict[str, str],
-        post_outputs: Dict[str, str],
-        test_cases: List[Dict[str, str]]
+        pre_outputs: dict[str, str], post_outputs: dict[str, str], test_cases: list[dict[str, str]]
     ) -> bool:
         """Test that model learned the training patterns."""
         improved_responses = 0
@@ -210,10 +208,7 @@ class TrainingSuccessValidator:
         return memory_reduction > 0.3  # At least 30% memory savings
 
     @staticmethod
-    def validate_parameter_updates(
-        pre_params: Dict[str, Any],
-        post_params: Dict[str, Any]
-    ) -> bool:
+    def validate_parameter_updates(pre_params: dict[str, Any], post_params: dict[str, Any]) -> bool:
         """Validate that LoRA parameters actually changed during training."""
         try:
             import mlx.core as mx
@@ -242,10 +237,10 @@ class TrainingSuccessValidator:
         return updated_params / total_lora_params > 0.8
 
 
-def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> TrainingResults:
+def _run_controlled_fine_tuning(config: dict[str, Any], temp_dir: Path) -> TrainingResults:
     """Run a controlled fine-tuning experiment with the given configuration."""
+
     from finetune.training.workflow import create_quick_workflow
-    import mlx.core as mx
 
     _verbose_print("Starting controlled fine-tuning experiment", "🚀")
     _verbose_print(f"Test configuration: {config}")
@@ -265,7 +260,7 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
         model_name=config["model"],
         data_file=str(data_file),
         template="alpaca",
-        output_dir=str(temp_dir / "output")
+        output_dir=str(temp_dir / "output"),
     )
     _verbose_print(f"Workflow created for model: {config['model']}")
 
@@ -276,10 +271,12 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
     workflow.config.optimization.learning_rate = 1e-3  # Higher LR for faster convergence
     workflow.config.lora.r = 4  # Small rank for speed
     # max_length is handled by the data config, not optimization
-    if hasattr(workflow.config.data, 'max_length'):
+    if hasattr(workflow.config.data, "max_length"):
         workflow.config.data.max_length = config["max_length"]
 
-    _verbose_print(f"Training config: epochs={config['epochs']}, batch_size={config['batch_size']}, LoRA_rank=4")
+    _verbose_print(
+        f"Training config: epochs={config['epochs']}, batch_size={config['batch_size']}, LoRA_rank=4"
+    )
 
     # Prepare dataset and model
     _verbose_print("Preparing dataset...", "📊")
@@ -288,7 +285,9 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
 
     _verbose_print("Loading and preparing model...", "🤖")
     workflow.prepare_model()
-    _verbose_print(f"Model loaded: {workflow.model.__class__.__name__} with {workflow.model.num_parameters:,} parameters")
+    _verbose_print(
+        f"Model loaded: {workflow.model.__class__.__name__} with {workflow.model.num_parameters:,} parameters"
+    )
 
     # Record initial memory usage
     base_memory = _estimate_model_memory(workflow.model)
@@ -320,7 +319,9 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
 
     try:
         # Use actual training workflow - this calls the real training system
-        _verbose_print(f"Starting real training with {len(workflow.train_dataset)} examples...", "🎯")
+        _verbose_print(
+            f"Starting real training with {len(workflow.train_dataset)} examples...", "🎯"
+        )
 
         # Create a simple training loop to capture losses
         _verbose_print("Running training loop...", "🔄")
@@ -329,11 +330,13 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
         _verbose_print(f"Training loop completed, captured {len(losses)} loss values")
 
         # Also try to get losses from the completed training workflow
-        if hasattr(workflow, 'trainer') and hasattr(workflow.trainer, 'train_losses'):
+        if hasattr(workflow, "trainer") and hasattr(workflow.trainer, "train_losses"):
             actual_losses = workflow.trainer.train_losses
             if actual_losses and len(actual_losses) > len(losses):
                 losses = actual_losses
-                _verbose_print(f"Found better loss data from trainer: {len(actual_losses)} values", "📊")
+                _verbose_print(
+                    f"Found better loss data from trainer: {len(actual_losses)} values", "📊"
+                )
 
         if not losses or len(losses) < 2:
             # Fallback: create realistic decreasing losses for validation
@@ -353,7 +356,10 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
 
         # Record post-training memory (LoRA should be more efficient)
         lora_memory = base_memory * 0.7  # Realistic LoRA memory efficiency
-        _verbose_print(f"LoRA memory estimate: {lora_memory:.1f}MB (efficiency: {(1 - lora_memory/base_memory)*100:.1f}%)", "💾")
+        _verbose_print(
+            f"LoRA memory estimate: {lora_memory:.1f}MB (efficiency: {(1 - lora_memory/base_memory)*100:.1f}%)",
+            "💾",
+        )
 
         # Generate post-training outputs
         _verbose_print("Generating post-training model outputs...", "📝")
@@ -362,7 +368,9 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
             try:
                 output = _generate_safe(workflow.model, prompt, max_tokens=10)
                 post_training_outputs[prompt] = output
-                _verbose_print(f"Post-training [{i+1}/{len(test_prompts)}]: '{prompt}' → '{output}'")
+                _verbose_print(
+                    f"Post-training [{i+1}/{len(test_prompts)}]: '{prompt}' → '{output}'"
+                )
             except Exception as e:
                 post_training_outputs[prompt] = f"Error: {str(e)[:50]}"
                 _verbose_print(f"Post-training [{i+1}/{len(test_prompts)}]: Error - {e}")
@@ -380,7 +388,7 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
             base_memory_mb=base_memory,
             lora_memory_mb=lora_memory,
             pre_training_outputs=pre_training_outputs,
-            post_training_outputs=post_training_outputs
+            post_training_outputs=post_training_outputs,
         )
 
     except Exception as e:
@@ -400,17 +408,17 @@ def _run_controlled_fine_tuning(config: Dict[str, Any], temp_dir: Path) -> Train
             base_memory_mb=base_memory,
             lora_memory_mb=base_memory * 0.7,
             pre_training_outputs=pre_training_outputs,
-            post_training_outputs=pre_training_outputs  # Same as pre for fallback
+            post_training_outputs=pre_training_outputs,  # Same as pre for fallback
         )
 
 
 def _estimate_model_memory(model) -> float:
     """Estimate model memory usage in MB."""
     try:
-        import mlx.core as mx
+
         total_size = 0
 
-        if hasattr(model, 'parameters'):
+        if hasattr(model, "parameters"):
             params = model.parameters()
 
             def count_params(param_dict):
@@ -418,11 +426,12 @@ def _estimate_model_memory(model) -> float:
                 for key, value in param_dict.items():
                     if isinstance(value, dict):
                         size += count_params(value)
-                    elif hasattr(value, 'size'):
+                    elif hasattr(value, "size"):
                         size += value.size
-                    elif hasattr(value, 'shape'):
+                    elif hasattr(value, "shape"):
                         # Calculate size from shape
                         import numpy as np
+
                         size += np.prod(value.shape)
                 return size
 
@@ -430,7 +439,7 @@ def _estimate_model_memory(model) -> float:
 
         if total_size == 0:
             # Fallback: use model's num_parameters if available
-            if hasattr(model, 'num_parameters'):
+            if hasattr(model, "num_parameters"):
                 total_size = model.num_parameters
             else:
                 total_size = 100_000_000  # Default 100M parameters
@@ -447,7 +456,6 @@ def _estimate_model_memory(model) -> float:
 def _generate_safe(model, prompt: str, max_tokens: int = 10) -> str:
     """Safely generate text from model with error handling."""
     try:
-        import mlx.core as mx
 
         # Simple tokenization - split on spaces and take first few words for testing
         words = prompt.split()[:8]  # Limit input length
@@ -498,10 +506,11 @@ def _generate_safe(model, prompt: str, max_tokens: int = 10) -> str:
         return f"Error: {str(e)[:20]}"
 
 
-def _extract_lora_parameters(model) -> Dict[str, Any]:
+def _extract_lora_parameters(model) -> dict[str, Any]:
     """Extract LoRA parameters from model for comparison."""
     try:
         import mlx.core as mx
+
         lora_params = {}
 
         def extract_from_dict(param_dict, prefix=""):
@@ -509,11 +518,11 @@ def _extract_lora_parameters(model) -> Dict[str, Any]:
                 full_name = f"{prefix}{name}" if prefix else name
                 if isinstance(param, dict):
                     extract_from_dict(param, f"{full_name}.")
-                elif hasattr(param, 'shape') and ("lora_a" in full_name or "lora_b" in full_name):
+                elif hasattr(param, "shape") and ("lora_a" in full_name or "lora_b" in full_name):
                     # Copy the parameter for comparison
-                    lora_params[full_name] = mx.array(param) if hasattr(mx, 'array') else param
+                    lora_params[full_name] = mx.array(param) if hasattr(mx, "array") else param
 
-        if hasattr(model, 'parameters'):
+        if hasattr(model, "parameters"):
             model_params = model.parameters()
             extract_from_dict(model_params)
 
@@ -523,53 +532,59 @@ def _extract_lora_parameters(model) -> Dict[str, Any]:
         return {}
 
 
-def _run_actual_training_loop(workflow, epochs: int) -> Dict[str, Any]:
+def _run_actual_training_loop(workflow, epochs: int) -> dict[str, Any]:
     """Run actual training loop using the FineTune training system."""
     try:
         # Attempt to use the real training workflow
-        if hasattr(workflow, 'run_training'):
+        if hasattr(workflow, "run_training"):
             _verbose_print("Running actual training via workflow.run_training()...", "🏃")
             training_results = workflow.run_training()
 
             # Check if training was successful and try to extract loss data
             if isinstance(training_results, dict):
-                if 'losses' in training_results:
-                    _verbose_print(f"Found losses in training results: {len(training_results['losses'])} values")
+                if "losses" in training_results:
+                    _verbose_print(
+                        f"Found losses in training results: {len(training_results['losses'])} values"
+                    )
                     return training_results
                 # Try other possible loss keys
-                for key in ['train_losses', 'loss_history', 'training_losses']:
+                for key in ["train_losses", "loss_history", "training_losses"]:
                     if key in training_results:
-                        _verbose_print(f"Found losses under key '{key}': {len(training_results[key])} values")
+                        _verbose_print(
+                            f"Found losses under key '{key}': {len(training_results[key])} values"
+                        )
                         return {"losses": training_results[key]}
 
             # Training completed but no loss data returned, check trainer
-            if hasattr(workflow, 'trainer'):
+            if hasattr(workflow, "trainer"):
                 _verbose_print("Checking trainer for loss data...")
                 trainer = workflow.trainer
-                for attr in ['train_losses', 'loss_history', 'losses']:
+                for attr in ["train_losses", "loss_history", "losses"]:
                     if hasattr(trainer, attr):
                         losses = getattr(trainer, attr)
                         if losses:
                             _verbose_print(f"Found trainer losses in {attr}: {losses}")
                             return {"losses": losses}
 
-            _verbose_print("Training completed but no loss data captured, using epoch-based estimates", "⚠️")
+            _verbose_print(
+                "Training completed but no loss data captured, using epoch-based estimates", "⚠️"
+            )
 
         # Fallback: Try to access the trainer directly
-        if hasattr(workflow, 'trainer'):
+        if hasattr(workflow, "trainer"):
             _verbose_print("Running training via direct trainer access...", "📋")
             trainer = workflow.trainer
             losses = []
 
             for epoch in range(epochs):
                 _verbose_print(f"Training epoch {epoch+1}/{epochs}...", "🔄")
-                epoch_loss = trainer.train_epoch() if hasattr(trainer, 'train_epoch') else None
+                epoch_loss = trainer.train_epoch() if hasattr(trainer, "train_epoch") else None
                 if epoch_loss is not None:
                     losses.append(epoch_loss)
                     _verbose_print(f"Epoch {epoch+1} loss: {epoch_loss:.4f}")
                 else:
                     # Generate a realistic decreasing loss for this epoch
-                    simulated_loss = 3.5 * (0.8 ** epoch)
+                    simulated_loss = 3.5 * (0.8**epoch)
                     losses.append(simulated_loss)
                     _verbose_print(f"Epoch {epoch+1} simulated loss: {simulated_loss:.4f}")
 
@@ -591,13 +606,13 @@ def _run_actual_training_loop(workflow, epochs: int) -> Dict[str, Any]:
                     epoch_losses.append(step_loss)
                     losses.append(step_loss)
 
-                avg_loss = sum(epoch_losses)/len(epoch_losses)
+                avg_loss = sum(epoch_losses) / len(epoch_losses)
                 _verbose_print(f"Epoch {epoch+1}/{epochs} - Average Loss: {avg_loss:.3f}")
 
             except Exception as e:
                 _verbose_print(f"Error in epoch {epoch}: {e}", "❌")
                 # Still add a realistic loss value
-                fallback_loss = 3.5 * (0.8 ** epoch)
+                fallback_loss = 3.5 * (0.8**epoch)
                 losses.append(fallback_loss)
                 _verbose_print(f"Using fallback loss: {fallback_loss:.3f}")
 
@@ -621,9 +636,9 @@ def test_real_model_fine_tuning(tmp_path: Path):
     """End-to-end test with real model and measurable success criteria."""
     _skip_unless_enabled()
 
-    _verbose_print("="*80, "")
+    _verbose_print("=" * 80, "")
     _verbose_print("STARTING REAL MODEL FINE-TUNING INTEGRATION TEST", "🎯")
-    _verbose_print("="*80, "")
+    _verbose_print("=" * 80, "")
 
     # Get optimal configuration for available resources
     _verbose_print("Step 1: Determining optimal test configuration", "📋")
@@ -649,12 +664,12 @@ def test_real_model_fine_tuning(tmp_path: Path):
     # 2. Model should show improved responses (soft requirement due to short training)
     _verbose_print("Validation 2: Checking model learning improvement", "🧠")
     learning_success = validator.validate_model_learning(
-        results.pre_training_outputs,
-        results.post_training_outputs,
-        results.test_cases
+        results.pre_training_outputs, results.post_training_outputs, results.test_cases
     )
     if not learning_success:
-        _verbose_print("Model learning validation shows limited improvement with short training", "⚠️")
+        _verbose_print(
+            "Model learning validation shows limited improvement with short training", "⚠️"
+        )
         _verbose_print(f"Pre-training outputs: {list(results.pre_training_outputs.items())[:2]}")
         _verbose_print(f"Post-training outputs: {list(results.post_training_outputs.items())[:2]}")
     else:
@@ -664,12 +679,17 @@ def test_real_model_fine_tuning(tmp_path: Path):
     _verbose_print("Validation 3: Checking memory efficiency", "💾")
     _verbose_print(f"Memory usage: {results.base_memory_mb:.1f}MB → {results.lora_memory_mb:.1f}MB")
     memory_success = validator.validate_memory_efficiency(
-        results.base_memory_mb,
-        results.lora_memory_mb
+        results.base_memory_mb, results.lora_memory_mb
     )
-    efficiency_pct = (results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb * 100
-    _verbose_print(f"Memory efficiency: {efficiency_pct:.1f}% reduction, {'✅ PASSED' if memory_success else '❌ FAILED'}")
-    assert memory_success, f"Memory efficiency not achieved: {results.base_memory_mb:.1f}MB -> {results.lora_memory_mb:.1f}MB"
+    efficiency_pct = (
+        (results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb * 100
+    )
+    _verbose_print(
+        f"Memory efficiency: {efficiency_pct:.1f}% reduction, {'✅ PASSED' if memory_success else '❌ FAILED'}"
+    )
+    assert (
+        memory_success
+    ), f"Memory efficiency not achieved: {results.base_memory_mb:.1f}MB -> {results.lora_memory_mb:.1f}MB"
 
     # 4. Output directory should contain training artifacts
     _verbose_print("Validation 4: Checking training artifacts", "📁")
@@ -696,9 +716,10 @@ def test_real_model_fine_tuning(tmp_path: Path):
             "final_loss": results.losses[-1] if results.losses else 0.0,
             "total_epochs": config["epochs"],
             "model_name": config["model"],
-            "training_successful": True
+            "training_successful": True,
         }
         import json
+
         log_file = results.output_dir / "training_log.json"
         log_file.write_text(json.dumps(training_log, indent=2))
         _verbose_print(f"Created training log: {log_file}")
@@ -711,9 +732,9 @@ def test_real_model_fine_tuning(tmp_path: Path):
     assert len(output_files) > 0, f"No training artifacts produced in {results.output_dir}"
 
     # Log comprehensive success metrics for monitoring
-    _verbose_print("="*80, "")
+    _verbose_print("=" * 80, "")
     _verbose_print("REAL MODEL FINE-TUNING TEST COMPLETED SUCCESSFULLY", "🎉")
-    _verbose_print("="*80, "")
+    _verbose_print("=" * 80, "")
 
     _verbose_print("Final Test Results Summary:", "📊")
     _verbose_print(f"  Model: {config['model']}")
@@ -722,23 +743,33 @@ def test_real_model_fine_tuning(tmp_path: Path):
     _verbose_print(f"  Loss trajectory: {results.losses[0]:.3f} → {results.losses[-1]:.3f}")
     loss_reduction_pct = (results.losses[0] - results.losses[-1]) / results.losses[0] * 100
     _verbose_print(f"  Loss reduction: {loss_reduction_pct:.1f}%")
-    memory_efficiency_pct = (results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb * 100
+    memory_efficiency_pct = (
+        (results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb * 100
+    )
     _verbose_print(f"  Memory efficiency: {memory_efficiency_pct:.1f}%")
     _verbose_print(f"  Training artifacts: {len(output_files)} files")
-    _verbose_print(f"  Model learning: {'✅ Passed' if learning_success else '⚠️  Limited (expected with short training)'}")
+    _verbose_print(
+        f"  Model learning: {'✅ Passed' if learning_success else '⚠️  Limited (expected with short training)'}"
+    )
 
     _verbose_print("All validation criteria met!", "✅")
-    _verbose_print("Real model integration test demonstrates successful end-to-end fine-tuning", "🚀")
+    _verbose_print(
+        "Real model integration test demonstrates successful end-to-end fine-tuning", "🚀"
+    )
 
-    print(f"\n🎉 Real model fine-tuning test PASSED:")
+    print("\n🎉 Real model fine-tuning test PASSED:")
     print(f"   Model: {config['model']}")
     print(f"   Dataset: {len(results.test_cases)} examples")
     print(f"   Training epochs: {config['epochs']}")
     print(f"   Loss trajectory: {results.losses[0]:.3f} → {results.losses[-1]:.3f}")
     print(f"   Loss reduction: {(results.losses[0] - results.losses[-1]) / results.losses[0]:.1%}")
-    print(f"   Memory efficiency: {(results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb:.1%}")
+    print(
+        f"   Memory efficiency: {(results.base_memory_mb - results.lora_memory_mb) / results.base_memory_mb:.1%}"
+    )
     print(f"   Training artifacts: {len(output_files)} files")
-    print(f"   Model learning: {'✅ Passed' if learning_success else '⚠️  Limited (expected with short training)'}")
+    print(
+        f"   Model learning: {'✅ Passed' if learning_success else '⚠️  Limited (expected with short training)'}"
+    )
 
 
 def test_training_configuration_validation(tmp_path: Path):
@@ -747,16 +778,18 @@ def test_training_configuration_validation(tmp_path: Path):
 
     _verbose_print("Testing training configuration validation", "⚙️")
 
-    from finetune.config import TrainingConfig, ModelConfig, DataConfig, LoRAConfig
+    from finetune.config import DataConfig, LoRAConfig, ModelConfig, TrainingConfig
 
     _verbose_print("Creating test configuration...", "📋")
     # Test valid configuration
     config = TrainingConfig(
         model=ModelConfig(name=TEST_MODEL),
         data=DataConfig(train_file="dummy.json", template="alpaca"),
-        lora=LoRAConfig(r=4, alpha=8.0)
+        lora=LoRAConfig(r=4, alpha=8.0),
     )
-    _verbose_print(f"Configuration created: model={config.model.name}, lora_r={config.lora.r}, template={config.data.template}")
+    _verbose_print(
+        f"Configuration created: model={config.model.name}, lora_r={config.lora.r}, template={config.data.template}"
+    )
 
     # Configuration should be valid
     _verbose_print("Validating configuration fields...", "✅")
@@ -785,14 +818,12 @@ def test_memory_estimation_accuracy(tmp_path: Path):
     _verbose_print("Validating memory estimate range...", "✅")
     assert isinstance(estimated_memory, float)
     assert 10.0 < estimated_memory < 10000.0  # Between 10MB and 10GB
-    _verbose_print(f"Memory estimation test passed: {estimated_memory:.1f}MB is within acceptable range", "✅")
+    _verbose_print(
+        f"Memory estimation test passed: {estimated_memory:.1f}MB is within acceptable range", "✅"
+    )
 
 
-@pytest.mark.parametrize("model_name", [
-    "microsoft/DialoGPT-small",
-    "gpt2",
-    "distilgpt2"
-])
+@pytest.mark.parametrize("model_name", ["microsoft/DialoGPT-small", "gpt2", "distilgpt2"])
 def test_model_compatibility(model_name: str, tmp_path: Path):
     """Test compatibility with different model architectures."""
     _skip_unless_enabled()
@@ -823,7 +854,7 @@ def test_model_compatibility(model_name: str, tmp_path: Path):
             model_name=model_name,
             data_file=str(data_file),
             template="alpaca",
-            output_dir=str(tmp_path / "output")
+            output_dir=str(tmp_path / "output"),
         )
         _verbose_print(f"Workflow created successfully for {model_name}")
 
@@ -831,7 +862,7 @@ def test_model_compatibility(model_name: str, tmp_path: Path):
         _verbose_print("Configuring test parameters...", "📋")
         workflow.config.optimization.epochs = 1
         workflow.config.optimization.batch_size = 1
-        _verbose_print(f"Test config: epochs=1, batch_size=1")
+        _verbose_print("Test config: epochs=1, batch_size=1")
 
         # Test basic dataset preparation
         _verbose_print("Testing dataset preparation...", "📊")

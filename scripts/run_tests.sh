@@ -162,7 +162,7 @@ echo "================"
 if $PYTEST_CMD; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
-    
+
     # Show coverage report location if generated
     if [[ "$COVERAGE" == true ]]; then
         echo ""
@@ -170,7 +170,7 @@ if $PYTEST_CMD; then
         echo "  HTML: htmlcov/index.html"
         echo "  Run 'open htmlcov/index.html' to view in browser"
     fi
-    
+
     exit 0
 else
     echo ""

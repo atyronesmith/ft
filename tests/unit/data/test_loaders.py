@@ -5,20 +5,18 @@ Tests are written first to drive the implementation of data loaders
 for various formats (JSON, JSONL, CSV) with proper validation.
 """
 
-import pytest
 import json
-import tempfile
 import os
-from pathlib import Path
-from unittest.mock import Mock, patch
+import tempfile
 
+import pytest
 from finetune.data import (
-    JSONLoader,
-    JSONLLoader,
-    DatasetLoader,
     DataFormatError,
-    DataValidationError,
+    DatasetLoader,
     DatasetValidator,
+    DataValidationError,
+    JSONLLoader,
+    JSONLoader,
 )
 
 
@@ -33,7 +31,7 @@ class TestJSONLoader:
             {"instruction": "How to loop?", "output": "Use for loops"},
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
 
@@ -57,7 +55,7 @@ class TestJSONLoader:
         # Arrange
         data = {"instruction": "Single example", "output": "Single response"}
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
 
@@ -77,7 +75,7 @@ class TestJSONLoader:
     def test_load_invalid_json_format(self):
         """Test loading invalid JSON raises appropriate error."""
         # Arrange
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"invalid": json}')  # Invalid JSON
             temp_path = f.name
 
@@ -132,7 +130,7 @@ class TestJSONLLoader:
             '{"instruction": "Python usage?", "output": "Programming language"}\n',
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.writelines(lines)
             temp_path = f.name
 
@@ -156,12 +154,12 @@ class TestJSONLLoader:
         # Arrange
         lines = [
             '{"instruction": "First", "output": "Response 1"}\n',
-            '\n',  # Empty line
+            "\n",  # Empty line
             '{"instruction": "Second", "output": "Response 2"}\n',
-            '   \n',  # Whitespace only
+            "   \n",  # Whitespace only
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.writelines(lines)
             temp_path = f.name
 
@@ -186,7 +184,7 @@ class TestJSONLLoader:
             '{"invalid": json line}\n',  # Invalid JSON
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.writelines(lines)
             temp_path = f.name
 
@@ -202,7 +200,7 @@ class TestJSONLLoader:
     def test_load_empty_jsonl_file(self):
         """Test loading empty JSONL file returns empty list."""
         # Arrange
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             pass  # Create empty file
             temp_path = f.name
 
@@ -226,7 +224,7 @@ class TestDatasetLoader:
         # Arrange
         data = [{"instruction": "Test", "output": "Response"}]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
 
@@ -247,7 +245,7 @@ class TestDatasetLoader:
         # Arrange
         lines = ['{"instruction": "Test", "output": "Response"}\n']
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.writelines(lines)
             temp_path = f.name
 
@@ -266,7 +264,7 @@ class TestDatasetLoader:
     def test_load_unsupported_format(self):
         """Test loading unsupported file format raises error."""
         # Arrange
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("Some text")
             temp_path = f.name
 
@@ -342,7 +340,9 @@ class TestDataValidation:
         ]
 
         # Act & Assert
-        with pytest.raises(DataValidationError, match="Empty value for required field 'instruction' in item 1"):
+        with pytest.raises(
+            DataValidationError, match="Empty value for required field 'instruction' in item 1"
+        ):
             validator.validate(data)
 
     def test_validate_field_types(self):
@@ -350,7 +350,7 @@ class TestDataValidation:
         # Arrange
         validator = DatasetValidator(
             required_fields=["instruction", "output"],
-            field_types={"instruction": str, "output": str}
+            field_types={"instruction": str, "output": str},
         )
 
         valid_data = [{"instruction": "Test", "output": "Response"}]
@@ -359,7 +359,9 @@ class TestDataValidation:
         # Act & Assert
         validator.validate(valid_data)  # Should not raise
 
-        with pytest.raises(DataValidationError, match="Field 'instruction' in item 0 must be of type str"):
+        with pytest.raises(
+            DataValidationError, match="Field 'instruction' in item 0 must be of type str"
+        ):
             validator.validate(invalid_data)
 
     def test_validate_minimum_length(self):
@@ -406,23 +408,23 @@ def sample_dataset():
     return [
         {
             "instruction": "Explain what machine learning is",
-            "output": "Machine learning is a method of data analysis that automates analytical model building."
+            "output": "Machine learning is a method of data analysis that automates analytical model building.",
         },
         {
             "instruction": "What is Python?",
-            "output": "Python is a high-level programming language known for its simplicity and readability."
+            "output": "Python is a high-level programming language known for its simplicity and readability.",
         },
         {
             "instruction": "How do neural networks work?",
-            "output": "Neural networks are computing systems inspired by biological neural networks."
-        }
+            "output": "Neural networks are computing systems inspired by biological neural networks.",
+        },
     ]
 
 
 @pytest.fixture
 def temp_json_file(sample_dataset):
     """Create temporary JSON file with sample data."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(sample_dataset, f)
         temp_path = f.name
 
@@ -433,9 +435,9 @@ def temp_json_file(sample_dataset):
 @pytest.fixture
 def temp_jsonl_file(sample_dataset):
     """Create temporary JSONL file with sample data."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         for item in sample_dataset:
-            f.write(json.dumps(item) + '\n')
+            f.write(json.dumps(item) + "\n")
         temp_path = f.name
 
     yield temp_path

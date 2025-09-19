@@ -4,7 +4,7 @@ Data validation functionality for datasets.
 Validates dataset structure, required fields, and data quality.
 """
 
-from typing import List, Dict, Any, Type, Optional
+from typing import Any, Optional
 
 
 class DatasetValidator:
@@ -12,8 +12,8 @@ class DatasetValidator:
 
     def __init__(
         self,
-        required_fields: List[str],
-        field_types: Optional[Dict[str, Type]] = None,
+        required_fields: list[str],
+        field_types: Optional[dict[str, type]] = None,
         min_length: Optional[int] = None,
     ):
         """
@@ -28,7 +28,7 @@ class DatasetValidator:
         self.field_types = field_types or {}
         self.min_length = min_length
 
-    def validate(self, data: List[Dict[str, Any]]) -> None:
+    def validate(self, data: list[dict[str, Any]]) -> None:
         """
         Validate dataset structure and content.
 
@@ -48,7 +48,7 @@ class DatasetValidator:
         for i, item in enumerate(data):
             self._validate_item(item, i)
 
-    def _validate_item(self, item: Dict[str, Any], index: int) -> None:
+    def _validate_item(self, item: dict[str, Any], index: int) -> None:
         """
         Validate a single dataset item.
 
@@ -69,7 +69,9 @@ class DatasetValidator:
             # Check field is not empty
             value = item[field]
             if isinstance(value, str) and not value.strip():
-                raise DataValidationError(f"Empty value for required field '{field}' in item {index}")
+                raise DataValidationError(
+                    f"Empty value for required field '{field}' in item {index}"
+                )
 
             # Check field type
             if field in self.field_types:
@@ -79,7 +81,7 @@ class DatasetValidator:
                         f"Field '{field}' in item {index} must be of type {expected_type.__name__}"
                     )
 
-    def get_summary(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_summary(self, data: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Get summary statistics for the dataset.
 

@@ -186,5 +186,3 @@ Week 3–4
 ---
 
 By tightening scope to what exists, formalizing measurement and compatibility, and adding security/reliability guardrails, the design docs will function as an authoritative, durable reference that scales with the project.
-
-

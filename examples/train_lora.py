@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Example script for fine-tuning a model using LoRA."""
 
-import mlx.core as mx
 from pathlib import Path
 
+import mlx.core as mx
 from finetune.models.manager import ModelManager
 from finetune.training import (
     LoRAConfig,
-    TrainingConfig,
     LoRATrainer,
     SimpleDataLoader,
+    TrainingConfig,
 )
 
 
@@ -37,6 +37,7 @@ def main():
     # model = manager.load_model("meta-llama/Llama-2-7b-hf")
 
     from finetune.models.base import ModelConfig
+
     config = ModelConfig(
         model_type="llama",
         hidden_size=768,
@@ -66,6 +67,7 @@ def main():
 
     # Get trainable parameters info
     from finetune.training.lora import get_lora_trainable_params
+
     trainable_params, trainable_count, total_count = get_lora_trainable_params(model)
     print(f"  Trainable parameters: {trainable_count:,} / {total_count:,}")
     print(f"  Percentage trainable: {100 * trainable_count / total_count:.2f}%")
@@ -79,7 +81,7 @@ def main():
     eval_dataset = SimpleDataLoader(eval_data, batch_size=4, shuffle=False)
     print(f"  Training samples: {len(train_data)}")
     print(f"  Evaluation samples: {len(eval_data)}")
-    print(f"  Batch size: 4")
+    print("  Batch size: 4")
     print(f"  Training batches: {len(train_dataset)}")
 
     # 4. Configure training
@@ -125,12 +127,14 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     from finetune.training.lora import save_lora_weights
+
     save_lora_weights(model, str(output_path))
     print(f"  Saved to: {output_path}")
 
     # Example of loading LoRA weights
     print("\n8. Loading LoRA weights...")
     from finetune.training.lora import load_lora_weights
+
     load_lora_weights(model, str(output_path))
     print("  Weights loaded successfully!")
 

@@ -4,11 +4,12 @@ Configuration manager for loading and saving configurations.
 Handles YAML file operations and configuration validation.
 """
 
-import yaml
 from pathlib import Path
 from typing import Union
 
-from .config import TrainingConfig, ConfigError
+import yaml
+
+from .config import ConfigError, TrainingConfig
 
 
 class ConfigManager:
@@ -33,7 +34,7 @@ class ConfigManager:
             raise ConfigError(f"Configuration file not found: {config_path}")
 
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ConfigError(f"Invalid YAML format: {e}")
@@ -65,14 +66,8 @@ class ConfigManager:
         try:
             config_dict = config.to_dict()
 
-            with open(config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(
-                    config_dict,
-                    f,
-                    default_flow_style=False,
-                    sort_keys=False,
-                    indent=2
-                )
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False, indent=2)
         except Exception as e:
             raise ConfigError(f"Failed to save configuration: {e}")
 

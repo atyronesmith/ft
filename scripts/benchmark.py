@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import platform
 import random
 import statistics
@@ -80,9 +79,11 @@ def detect_environment(backend: str, device: str) -> EnvironmentInfo:
     if backend == "mlx":
         try:
             import mlx.core as _mx  # type: ignore
+
             global mx, nn
             mx = _mx
             import mlx.nn as _nn  # type: ignore
+
             nn = _nn
             mlx_version = getattr(mx, "__version__", None)
         except Exception:
@@ -90,6 +91,7 @@ def detect_environment(backend: str, device: str) -> EnvironmentInfo:
     elif backend == "torch":
         try:
             import torch as _th  # type: ignore
+
             global th
             th = _th
             torch_version = th.__version__
@@ -126,6 +128,7 @@ def set_seeds(seed: int, backend: str):
 
 
 # ------------------------ MLX Model ------------------------
+
 
 def build_mlx_mlp(layers: int, hidden: int, dtype: str):
     d = {"fp32": mx.float32, "fp16": mx.float16, "bf16": mx.bfloat16}[dtype]
@@ -197,6 +200,7 @@ def run_mlx(config: BenchmarkConfig) -> BenchmarkResult:
 
 # ------------------------ Torch Model ------------------------
 
+
 def build_torch_mlp(layers: int, hidden: int, dtype: str, device: str):
     d = {"fp32": th.float32, "fp16": th.float16, "bf16": th.bfloat16}[dtype]
 
@@ -224,7 +228,9 @@ def build_torch_mlp(layers: int, hidden: int, dtype: str, device: str):
 def run_torch(config: BenchmarkConfig, device: str) -> BenchmarkResult:
     device_ = th.device(device)
     model, dtype_ = build_torch_mlp(config.layers, config.hidden_size, config.dtype, device_)
-    x = th.rand((config.batch_size, config.seq_len, config.hidden_size), device=device_, dtype=dtype_)
+    x = th.rand(
+        (config.batch_size, config.seq_len, config.hidden_size), device=device_, dtype=dtype_
+    )
 
     opt = th.optim.AdamW(model.parameters(), lr=1e-3)
 

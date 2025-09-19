@@ -4,16 +4,16 @@ Configuration validator for checking compatibility and optimization.
 Provides validation, warnings, and recommendations for training configurations.
 """
 
-from typing import List, Dict, Any
 import re
+from typing import Any
 
-from .config import TrainingConfig, ConfigError
+from .config import TrainingConfig
 
 
 class ConfigValidator:
     """Validator for training configurations."""
 
-    def validate(self, config: TrainingConfig) -> List[str]:
+    def validate(self, config: TrainingConfig) -> list[str]:
         """
         Validate configuration and return warnings.
 
@@ -39,12 +39,14 @@ class ConfigValidator:
 
         return warnings
 
-    def _validate_lora_config(self, config: TrainingConfig) -> List[str]:
+    def _validate_lora_config(self, config: TrainingConfig) -> list[str]:
         """Validate LoRA configuration."""
         warnings = []
 
         if config.lora.r > 64:
-            warnings.append(f"High LoRA rank ({config.lora.r}) may be unnecessary and slow training")
+            warnings.append(
+                f"High LoRA rank ({config.lora.r}) may be unnecessary and slow training"
+            )
 
         if config.lora.alpha / config.lora.r > 4.0:
             warnings.append(f"High LoRA scaling ({config.lora.scaling:.1f}) may cause instability")
@@ -54,7 +56,7 @@ class ConfigValidator:
 
         return warnings
 
-    def _validate_optimization_config(self, config: TrainingConfig) -> List[str]:
+    def _validate_optimization_config(self, config: TrainingConfig) -> list[str]:
         """Validate optimization configuration."""
         warnings = []
 
@@ -66,17 +68,24 @@ class ConfigValidator:
             warnings.append("Very low learning rate may result in slow convergence")
 
         # Check batch size and gradient accumulation
-        effective_batch_size = config.optimization.batch_size * config.optimization.gradient_accumulation_steps
+        effective_batch_size = (
+            config.optimization.batch_size * config.optimization.gradient_accumulation_steps
+        )
 
         if effective_batch_size > 32:
-            warnings.append(f"Large effective batch size ({effective_batch_size}) may hurt generalization")
+            warnings.append(
+                f"Large effective batch size ({effective_batch_size}) may hurt generalization"
+            )
 
-        if config.optimization.batch_size > 8 and config.optimization.gradient_accumulation_steps == 1:
+        if (
+            config.optimization.batch_size > 8
+            and config.optimization.gradient_accumulation_steps == 1
+        ):
             warnings.append("Consider using gradient accumulation instead of large batch size")
 
         return warnings
 
-    def _validate_model_config(self, config: TrainingConfig) -> List[str]:
+    def _validate_model_config(self, config: TrainingConfig) -> list[str]:
         """Validate model configuration."""
         warnings = []
 
@@ -90,7 +99,7 @@ class ConfigValidator:
 
         return warnings
 
-    def _validate_data_config(self, config: TrainingConfig) -> List[str]:
+    def _validate_data_config(self, config: TrainingConfig) -> list[str]:
         """Validate data configuration."""
         warnings = []
 
@@ -108,7 +117,7 @@ class ConfigValidator:
             return True  # Allow placeholder for testing
 
         # HuggingFace format: org/model-name or just model-name
-        pattern = r'^([a-zA-Z0-9._-]+/)?[a-zA-Z0-9._-]+$'
+        pattern = r"^([a-zA-Z0-9._-]+/)?[a-zA-Z0-9._-]+$"
         return bool(re.match(pattern, name))
 
     def estimate_memory_usage(self, config: TrainingConfig) -> float:
@@ -148,7 +157,9 @@ class ConfigValidator:
         training_overhead = base_memory * 0.5  # Conservative estimate
 
         # Multiply by batch size
-        total_memory = (base_memory + lora_overhead + training_overhead) * config.optimization.batch_size
+        total_memory = (
+            base_memory + lora_overhead + training_overhead
+        ) * config.optimization.batch_size
 
         return round(total_memory, 1)
 
@@ -177,7 +188,7 @@ class ConfigValidator:
 
         return recommended_batch_size
 
-    def check_compatibility(self, config: TrainingConfig) -> Dict[str, Any]:
+    def check_compatibility(self, config: TrainingConfig) -> dict[str, Any]:
         """
         Check overall compatibility and provide recommendations.
 
@@ -194,18 +205,23 @@ class ConfigValidator:
             "warnings": warnings,
             "memory_estimate_gb": memory_estimate,
             "is_valid": len([w for w in warnings if "error" in w.lower()]) == 0,
-            "recommendations": self._generate_recommendations(config, warnings)
+            "recommendations": self._generate_recommendations(config, warnings),
         }
 
-    def _generate_recommendations(self, config: TrainingConfig, warnings: List[str]) -> List[str]:
+    def _generate_recommendations(self, config: TrainingConfig, warnings: list[str]) -> list[str]:
         """Generate optimization recommendations."""
         recommendations = []
 
         if config.lora.r < 8:
             recommendations.append("Consider increasing LoRA rank to 8-16 for better adaptation")
 
-        if config.optimization.batch_size == 1 and config.optimization.gradient_accumulation_steps == 1:
-            recommendations.append("Consider using gradient accumulation to increase effective batch size")
+        if (
+            config.optimization.batch_size == 1
+            and config.optimization.gradient_accumulation_steps == 1
+        ):
+            recommendations.append(
+                "Consider using gradient accumulation to increase effective batch size"
+            )
 
         if config.optimization.epochs > 5:
             recommendations.append("Many epochs may lead to overfitting; consider early stopping")

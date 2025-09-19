@@ -1,22 +1,19 @@
 """Unit tests for LoRA implementation."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
 import tempfile
+import unittest
 from pathlib import Path
-
-import numpy as np
+from unittest.mock import Mock, patch
 
 from finetune.training.lora import (
     LoRAConfig,
     LoRALinear,
     apply_lora_to_model,
     get_lora_trainable_params,
-    save_lora_weights,
     load_lora_weights,
+    save_lora_weights,
 )
-from finetune.training.trainer import LoRATrainer, TrainingConfig, SimpleDataLoader
-from finetune.models.base import ModelConfig
+from finetune.training.trainer import LoRATrainer, SimpleDataLoader, TrainingConfig
 
 
 class TestLoRAConfig(unittest.TestCase):
@@ -160,6 +157,7 @@ class TestLoRAApplication(unittest.TestCase):
 
     def test_apply_lora_to_model(self, mock_nn, mock_mx):
         """Test applying LoRA to a model."""
+
         # Create a proper mock Linear class for isinstance check
         class MockLinear:
             def __init__(self, in_features=None, out_features=None, bias=False):
@@ -401,9 +399,7 @@ class TestSimpleDataLoader(unittest.TestCase):
         mock_mx.arange.return_value = list(range(4))
         mock_mx.stack.return_value = Mock()
 
-        data = [
-            {"input_ids": Mock()} for _ in range(4)
-        ]
+        data = [{"input_ids": Mock()} for _ in range(4)]
         loader = SimpleDataLoader(data, batch_size=2, shuffle=False)
 
         batches = list(loader)

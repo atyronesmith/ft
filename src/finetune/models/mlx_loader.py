@@ -2,7 +2,6 @@
 MLX model loader for HuggingFace models.
 """
 
-import glob
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -191,7 +190,9 @@ class MLXModelLoader(ModelLoader):
 
         return weights
 
-    def convert_weights(self, source_weights: dict[str, Any], config: ModelConfig) -> dict[str, Any]:
+    def convert_weights(
+        self, source_weights: dict[str, Any], config: ModelConfig
+    ) -> dict[str, Any]:
         """Convert PyTorch weights to MLX format."""
         import torch
 
@@ -212,7 +213,7 @@ class MLXModelLoader(ModelLoader):
             # CORRECTED: Apply a general rule for Llama models instead of an incomplete map.
             # This correctly handles all layers by simply stripping the "model." prefix.
             if is_llama and pytorch_name.startswith("model."):
-                mlx_name = pytorch_name[len("model."):]
+                mlx_name = pytorch_name[len("model.") :]
             else:
                 # For other models or names that don't start with "model.", use the original name.
                 # This also handles lm_head.weight correctly for Llama.

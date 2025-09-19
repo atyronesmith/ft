@@ -2,11 +2,9 @@
 Unit tests for PyTorch model loader and fallback.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, PropertyMock
-import json
+from unittest.mock import Mock, PropertyMock, patch
 
+import pytest
 from finetune.models.base import ModelConfig
 
 
@@ -138,11 +136,15 @@ class TestPyTorchModel:
 
         # Create mock model with real tensors
         mock_model = Mock()
-        mock_model.parameters = Mock(side_effect=lambda: iter([
-            torch.zeros(100, 200),  # 20,000 params
-            torch.zeros(50),  # 50 params
-            torch.zeros(10, 10, 10),  # 1,000 params
-        ]))
+        mock_model.parameters = Mock(
+            side_effect=lambda: iter(
+                [
+                    torch.zeros(100, 200),  # 20,000 params
+                    torch.zeros(50),  # 50 params
+                    torch.zeros(10, 10, 10),  # 1,000 params
+                ]
+            )
+        )
 
         model = PyTorchModel(mock_model, config)
 
@@ -282,7 +284,9 @@ class TestPyTorchModelLoader:
             }
         )
         mock_empty_model = Mock()
-        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)]))
+        mock_empty_model.parameters = Mock(
+            side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)])
+        )
         mock_empty_model.to.return_value = mock_empty_model
         mock_model.from_pretrained.return_value = mock_empty_model
         mock_tokenizer.from_pretrained.return_value = Mock()
@@ -316,7 +320,9 @@ class TestPyTorchModelLoader:
             }
         )
         mock_empty_model = Mock()
-        mock_empty_model.parameters = Mock(side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)]))
+        mock_empty_model.parameters = Mock(
+            side_effect=lambda: iter([Mock(device="cpu", numel=lambda: 0)])
+        )
         mock_empty_model.to.return_value = mock_empty_model
         mock_model.from_pretrained.return_value = mock_empty_model
         mock_tokenizer.from_pretrained.return_value = Mock()
@@ -340,7 +346,9 @@ class TestPyTorchModelLoader:
         from finetune.models.torch_loader import PyTorchModel
 
         mock_torch_model = Mock()
-        mock_torch_model.parameters = Mock(side_effect=lambda: iter([Mock(dtype="float16", device="mps")]))
+        mock_torch_model.parameters = Mock(
+            side_effect=lambda: iter([Mock(dtype="float16", device="mps")])
+        )
 
         config = ModelConfig(
             model_type="test",
@@ -354,8 +362,12 @@ class TestPyTorchModelLoader:
 
         model = PyTorchModel(mock_torch_model, config)
         # Mock the properties using PropertyMock
-        with patch.object(PyTorchModel, 'num_parameters', new_callable=PropertyMock) as mock_num_params:
-            with patch.object(PyTorchModel, 'memory_footprint', new_callable=PropertyMock) as mock_mem:
+        with patch.object(
+            PyTorchModel, "num_parameters", new_callable=PropertyMock
+        ) as mock_num_params:
+            with patch.object(
+                PyTorchModel, "memory_footprint", new_callable=PropertyMock
+            ) as mock_mem:
                 mock_num_params.return_value = 1000000
                 mock_mem.return_value = 2000000
                 model.device = "mps"

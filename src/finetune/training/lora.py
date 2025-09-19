@@ -20,6 +20,7 @@ class LoRAConfig:
         use_rslora: Whether to use rank-stabilized LoRA (default: False)
         use_dora: Whether to use weight-decomposed LoRA (default: False)
     """
+
     r: int = 8
     alpha: float = 16.0
     dropout: float = 0.0
@@ -29,8 +30,15 @@ class LoRAConfig:
 
     def __post_init__(self):
         if self.target_modules is None:
-            self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                                  "gate_proj", "up_proj", "down_proj"]
+            self.target_modules = [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ]
 
         if self.r <= 0:
             raise ValueError(f"LoRA rank must be positive, got {self.r}")
@@ -76,10 +84,7 @@ class LoRALinear(nn.Module):
         # LoRA parameters with more conservative initialization
         # Use smaller scale to prevent exploding gradients
         init_scale = 0.01 / math.sqrt(config.r)  # Much smaller initialization
-        self.lora_a = mx.random.normal(
-            shape=(config.r, in_features),
-            scale=init_scale
-        )
+        self.lora_a = mx.random.normal(shape=(config.r, in_features), scale=init_scale)
         self.lora_b = mx.zeros((out_features, config.r))
 
         # Optional dropout
@@ -108,7 +113,7 @@ class LoRALinear(nn.Module):
             weight_norm = mx.linalg.norm(
                 self.base.weight + self.lora_b @ self.lora_a * self.config.scaling,
                 axis=1,
-                keepdims=True
+                keepdims=True,
             )
             lora_out = lora_out * (self.magnitude / weight_norm).T
 
@@ -145,7 +150,7 @@ class LoRALayer:
                         module.weight.shape[1],
                         module.weight.shape[0],
                         config,
-                        bias=module.bias is not None
+                        bias=module.bias is not None,
                     )
                     # Copy weights (create new tensors to ensure they're truly frozen)
                     lora_linear.base.weight = mx.array(module.weight)
@@ -213,6 +218,7 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
     Returns:
         The model with LoRA adapters added
     """
+
     # Find and replace target modules
     def _resolve_path(root: nn.Module | list, path: str):
         obj = root
@@ -238,7 +244,7 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
                     module.weight.shape[1],
                     module.weight.shape[0],
                     config,
-                    bias=hasattr(module, "bias") and module.bias is not None
+                    bias=hasattr(module, "bias") and module.bias is not None,
                 )
 
                 # Copy original weights

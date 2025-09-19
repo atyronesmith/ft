@@ -2,12 +2,11 @@
 Unit tests for MLX model loader.
 """
 
-import pytest
 import json
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
-import numpy as np
+from unittest.mock import MagicMock, Mock, patch
 
+import numpy as np
+import pytest
 from finetune.models.base import ModelConfig
 
 
@@ -130,6 +129,7 @@ class TestMLXModelLoader:
             mock_torch = Mock()
             mock_torch.Tensor = type(mock_tensor)  # Use the actual mock tensor type
             import sys
+
             sys.modules["torch"] = mock_torch
 
             # Convert weights
@@ -203,6 +203,7 @@ class TestMLXModelLoader:
             # Mock torch directly using patch
             with patch.dict("sys.modules", {"torch": Mock()}):
                 import sys
+
                 mock_torch = sys.modules["torch"]
                 mock_torch.load.side_effect = [
                     {"weight1": Mock()},

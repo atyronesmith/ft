@@ -2,14 +2,13 @@
 Tests for model loading functionality.
 """
 
-import pytest
-from pathlib import Path
-import tempfile
 import json
-from unittest.mock import Mock, patch, MagicMock
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock
 
+import pytest
 from finetune.models.base import ModelConfig
-from finetune.backends.device import DeviceType
 
 
 def _mlx_available():

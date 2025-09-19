@@ -5,11 +5,18 @@ Quick start example for FineTune workflow.
 Demonstrates end-to-end fine-tuning with the integrated pipeline.
 """
 
-import tempfile
 import json
+import tempfile
 from pathlib import Path
 
-from finetune.config import TrainingConfig, ModelConfig, DataConfig, LoRAConfig, OptimizationConfig, ConfigProfile
+from finetune.config import (
+    ConfigProfile,
+    DataConfig,
+    LoRAConfig,
+    ModelConfig,
+    OptimizationConfig,
+    TrainingConfig,
+)
 from finetune.training.workflow import FineTuningWorkflow, create_quick_workflow
 
 
@@ -18,28 +25,25 @@ def create_sample_data():
     data = [
         {
             "instruction": "What is the capital of France?",
-            "output": "The capital of France is Paris."
+            "output": "The capital of France is Paris.",
         },
         {
             "instruction": "Explain photosynthesis briefly",
-            "output": "Photosynthesis is the process by which plants convert sunlight, carbon dioxide, and water into glucose and oxygen."
+            "output": "Photosynthesis is the process by which plants convert sunlight, carbon dioxide, and water into glucose and oxygen.",
         },
-        {
-            "instruction": "What is 2 + 2?",
-            "output": "2 + 2 equals 4."
-        },
+        {"instruction": "What is 2 + 2?", "output": "2 + 2 equals 4."},
         {
             "instruction": "Name three programming languages",
-            "output": "Three popular programming languages are Python, JavaScript, and Java."
+            "output": "Three popular programming languages are Python, JavaScript, and Java.",
         },
         {
             "instruction": "What is the largest planet in our solar system?",
-            "output": "Jupiter is the largest planet in our solar system."
-        }
+            "output": "Jupiter is the largest planet in our solar system.",
+        },
     ]
 
     # Save to temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(data, f)
         return f.name
 
@@ -60,7 +64,7 @@ def demonstrate_quick_workflow():
             model_name="microsoft/DialoGPT-small",  # Small model for demo
             data_file=data_file,
             template="alpaca",
-            output_dir="./demo_output"
+            output_dir="./demo_output",
         )
 
         print("✅ Workflow created successfully!")
@@ -144,6 +148,7 @@ def demonstrate_full_config():
 
         # Test configuration validation
         from finetune.config import ConfigValidator
+
         validator = ConfigValidator()
         warnings = validator.validate(chat_config)
 
@@ -207,7 +212,9 @@ if __name__ == "__main__":
         print("\n🎉 All demos completed successfully!")
         print("\n📚 Next steps:")
         print("  1. Install a small model: ft models pull microsoft/DialoGPT-small")
-        print("  2. Try the CLI: ft train quick microsoft/DialoGPT-small examples/sample_dataset.json")
+        print(
+            "  2. Try the CLI: ft train quick microsoft/DialoGPT-small examples/sample_dataset.json"
+        )
         print("  3. Check the output: ls -la quick_output/")
 
     except KeyboardInterrupt:
@@ -215,4 +222,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Demo failed: {e}")
         import traceback
+
         traceback.print_exc()

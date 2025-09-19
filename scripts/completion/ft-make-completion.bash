@@ -8,4 +8,3 @@ _ft_make_completion() {
     return 0
 }
 complete -F _ft_make_completion make
-

@@ -5,18 +5,16 @@ Tests are written first to drive the implementation of prompt templates
 for various formats (Alpaca, ChatML, Llama, custom).
 """
 
-import pytest
-from pathlib import Path
-from typing import Dict, Any
 
+import pytest
 from finetune.data.templates import (
-    PromptTemplate,
     AlpacaTemplate,
     ChatMLTemplate,
-    LlamaTemplate,
     CustomTemplate,
-    TemplateRegistry,
+    LlamaTemplate,
+    PromptTemplate,
     TemplateError,
+    TemplateRegistry,
 )
 
 
@@ -30,6 +28,7 @@ class TestPromptTemplate:
 
     def test_template_format_interface(self):
         """Test that subclasses must implement format method."""
+
         class IncompleteTemplate(PromptTemplate):
             pass
 
@@ -44,10 +43,7 @@ class TestAlpacaTemplate:
         """Test basic Alpaca instruction formatting."""
         # Arrange
         template = AlpacaTemplate()
-        data = {
-            "instruction": "What is Python?",
-            "output": "Python is a programming language."
-        }
+        data = {"instruction": "What is Python?", "output": "Python is a programming language."}
 
         # Act
         result = template.format(data)
@@ -70,7 +66,7 @@ class TestAlpacaTemplate:
         data = {
             "instruction": "Summarize the following text",
             "input": "Machine learning is a subset of AI...",
-            "output": "ML is part of AI focused on data patterns."
+            "output": "ML is part of AI focused on data patterns.",
         }
 
         # Act
@@ -126,10 +122,7 @@ class TestChatMLTemplate:
         """Test basic ChatML conversation formatting."""
         # Arrange
         template = ChatMLTemplate()
-        data = {
-            "instruction": "What is Python?",
-            "output": "Python is a programming language."
-        }
+        data = {"instruction": "What is Python?", "output": "Python is a programming language."}
 
         # Act
         result = template.format(data)
@@ -147,10 +140,7 @@ class TestChatMLTemplate:
         """Test ChatML with system message."""
         # Arrange
         template = ChatMLTemplate(system_message="You are a helpful assistant.")
-        data = {
-            "instruction": "Hello",
-            "output": "Hi there!"
-        }
+        data = {"instruction": "Hello", "output": "Hi there!"}
 
         # Act
         result = template.format(data)
@@ -175,7 +165,7 @@ class TestChatMLTemplate:
                 {"role": "user", "content": "Hello"},
                 {"role": "assistant", "content": "Hi!"},
                 {"role": "user", "content": "How are you?"},
-                {"role": "assistant", "content": "I'm doing well, thank you!"}
+                {"role": "assistant", "content": "I'm doing well, thank you!"},
             ]
         }
 
@@ -203,29 +193,20 @@ class TestLlamaTemplate:
         """Test basic Llama chat formatting."""
         # Arrange
         template = LlamaTemplate()
-        data = {
-            "instruction": "What is Python?",
-            "output": "Python is a programming language."
-        }
+        data = {"instruction": "What is Python?", "output": "Python is a programming language."}
 
         # Act
         result = template.format(data)
 
         # Assert
-        expected = (
-            "<s>[INST] What is Python? [/INST] "
-            "Python is a programming language. </s>"
-        )
+        expected = "<s>[INST] What is Python? [/INST] " "Python is a programming language. </s>"
         assert result == expected
 
     def test_llama_with_system_message(self):
         """Test Llama with system message."""
         # Arrange
         template = LlamaTemplate(system_message="You are a helpful assistant.")
-        data = {
-            "instruction": "Hello",
-            "output": "Hi there!"
-        }
+        data = {"instruction": "Hello", "output": "Hi there!"}
 
         # Act
         result = template.format(data)
@@ -248,7 +229,7 @@ class TestLlamaTemplate:
                 {"role": "user", "content": "Hello"},
                 {"role": "assistant", "content": "Hi!"},
                 {"role": "user", "content": "How are you?"},
-                {"role": "assistant", "content": "I'm doing well!"}
+                {"role": "assistant", "content": "I'm doing well!"},
             ]
         }
 
@@ -257,8 +238,7 @@ class TestLlamaTemplate:
 
         # Assert
         expected = (
-            "<s>[INST] Hello [/INST] Hi! </s>"
-            "<s>[INST] How are you? [/INST] I'm doing well! </s>"
+            "<s>[INST] Hello [/INST] Hi! </s>" "<s>[INST] How are you? [/INST] I'm doing well! </s>"
         )
         assert result == expected
 
@@ -271,10 +251,7 @@ class TestCustomTemplate:
         # Arrange
         template_str = "Question: {instruction}\nAnswer: {output}"
         template = CustomTemplate(template_str)
-        data = {
-            "instruction": "What is Python?",
-            "output": "A programming language."
-        }
+        data = {"instruction": "What is Python?", "output": "A programming language."}
 
         # Act
         result = template.format(data)
@@ -299,11 +276,7 @@ class TestCustomTemplate:
         # Arrange
         template_str = "Q: {instruction}"
         template = CustomTemplate(template_str)
-        data = {
-            "instruction": "What is Python?",
-            "output": "Not used",
-            "extra": "Also not used"
-        }
+        data = {"instruction": "What is Python?", "output": "Not used", "extra": "Also not used"}
 
         # Act
         result = template.format(data)
@@ -316,19 +289,16 @@ class TestCustomTemplate:
         # Arrange
         template_content = "User: {instruction}\nBot: {output}"
 
-        import tempfile
         import os
+        import tempfile
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write(template_content)
             temp_path = f.name
 
         try:
             template = CustomTemplate.from_file(temp_path)
-            data = {
-                "instruction": "Hello",
-                "output": "Hi there!"
-            }
+            data = {"instruction": "Hello", "output": "Hi there!"}
 
             # Act
             result = template.format(data)
@@ -405,17 +375,18 @@ class TestTemplateIntegration:
     def test_template_with_loaded_data(self):
         """Test applying template to loaded dataset."""
         # Arrange
-        from finetune.data import JSONLoader
-        import tempfile
         import json
         import os
+        import tempfile
+
+        from finetune.data import JSONLoader
 
         data = [
             {"instruction": "What is AI?", "output": "Artificial Intelligence"},
             {"instruction": "What is ML?", "output": "Machine Learning"},
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
 
@@ -461,7 +432,7 @@ def sample_instruction_data():
     """Provide sample instruction-following data."""
     return {
         "instruction": "Explain the concept of recursion in programming",
-        "output": "Recursion is when a function calls itself to solve smaller instances of the same problem."
+        "output": "Recursion is when a function calls itself to solve smaller instances of the same problem.",
     }
 
 
@@ -473,7 +444,10 @@ def sample_conversation_data():
             {"role": "user", "content": "What's the weather like?"},
             {"role": "assistant", "content": "I don't have access to current weather data."},
             {"role": "user", "content": "How can I check the weather?"},
-            {"role": "assistant", "content": "You can check weather apps or websites like Weather.com."}
+            {
+                "role": "assistant",
+                "content": "You can check weather apps or websites like Weather.com.",
+            },
         ]
     }
 

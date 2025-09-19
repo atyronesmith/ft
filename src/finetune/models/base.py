@@ -45,7 +45,9 @@ class ModelConfig:
         elif "d_model" in hf_config:  # T5, some other models
             hidden_size = hf_config["d_model"]
         else:
-            raise ValueError(f"Could not find hidden_size field in config for model type: {model_type}")
+            raise ValueError(
+                f"Could not find hidden_size field in config for model type: {model_type}"
+            )
 
         # Map num_hidden_layers field
         if "num_hidden_layers" in hf_config:
@@ -55,7 +57,9 @@ class ModelConfig:
         elif "num_layers" in hf_config:  # Some models
             num_layers = hf_config["num_layers"]
         else:
-            raise ValueError(f"Could not find num_hidden_layers field in config for model type: {model_type}")
+            raise ValueError(
+                f"Could not find num_hidden_layers field in config for model type: {model_type}"
+            )
 
         # Map num_attention_heads field
         if "num_attention_heads" in hf_config:
@@ -63,7 +67,9 @@ class ModelConfig:
         elif "n_head" in hf_config:  # GPT-2, DialoGPT
             num_heads = hf_config["n_head"]
         else:
-            raise ValueError(f"Could not find num_attention_heads field in config for model type: {model_type}")
+            raise ValueError(
+                f"Could not find num_attention_heads field in config for model type: {model_type}"
+            )
 
         # Map max_position_embeddings field
         if "max_position_embeddings" in hf_config:
@@ -88,10 +94,14 @@ class ModelConfig:
             hidden_size=hidden_size,
             num_hidden_layers=num_layers,
             num_attention_heads=num_heads,
-            intermediate_size=hf_config.get("intermediate_size", hf_config.get("n_inner", hidden_size * 4)),
+            intermediate_size=hf_config.get(
+                "intermediate_size", hf_config.get("n_inner", hidden_size * 4)
+            ),
             max_position_embeddings=max_pos_emb,
             rms_norm_eps=hf_config.get("rms_norm_eps", 1e-6),
-            layer_norm_eps=hf_config.get("layer_norm_eps", hf_config.get("layer_norm_epsilon", 1e-5)),
+            layer_norm_eps=hf_config.get(
+                "layer_norm_eps", hf_config.get("layer_norm_epsilon", 1e-5)
+            ),
             tie_word_embeddings=tie_word_embeddings,
             use_cache=hf_config.get("use_cache", True),
             num_key_value_heads=hf_config.get("num_key_value_heads"),

@@ -2,10 +2,9 @@
 Unit tests for MLX model implementations.
 """
 
-import pytest
-import numpy as np
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
+import pytest
 from finetune.models.base import ModelConfig
 
 
@@ -13,6 +12,7 @@ def _mlx_available():
     """Check if MLX is available."""
     try:
         import mlx
+
         return True
     except ImportError:
         return False
@@ -201,7 +201,7 @@ class TestMLXModels:
     @pytest.mark.requires_mlx
     def test_get_mlx_model(self, small_config):
         """Test get_mlx_model function."""
-        from finetune.models.mlx_models import get_mlx_model, MLXLlamaModel, MLXGPTModel
+        from finetune.models.mlx_models import MLXGPTModel, MLXLlamaModel, get_mlx_model
 
         # Test Llama
         small_config.model_type = "llama"
@@ -250,18 +250,20 @@ class TestMLXModels:
 class TestMLXModelsWithoutMLX:
     """Test MLX models behavior when MLX is not available."""
 
-    @pytest.mark.skipif(_mlx_available(), reason="Skip when MLX is available")  
+    @pytest.mark.skipif(_mlx_available(), reason="Skip when MLX is available")
     def test_import_without_mlx(self):
         """Test that importing works even without MLX."""
         # This test simulates MLX not being available
         # It's skipped when MLX is actually installed
         import sys
-        
+
         # Clean up any existing imports
-        modules_to_remove = [k for k in sys.modules.keys() if 'mlx' in k or 'finetune.models.mlx' in k]
+        modules_to_remove = [
+            k for k in sys.modules.keys() if "mlx" in k or "finetune.models.mlx" in k
+        ]
         for mod in modules_to_remove:
             del sys.modules[mod]
-        
+
         with patch.dict("sys.modules", {"mlx": None, "mlx.core": None, "mlx.nn": None}):
             from finetune.models import mlx_models
 

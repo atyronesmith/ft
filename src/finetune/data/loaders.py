@@ -7,15 +7,15 @@ with proper validation and error handling.
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Union
+from typing import Any, Union
 
-from .exceptions import DataFormatError, DataValidationError
+from .exceptions import DataFormatError
 
 
 class JSONLoader:
     """Loader for JSON format datasets."""
 
-    def load(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def load(self, file_path: Union[str, Path]) -> list[dict[str, Any]]:
         """
         Load dataset from JSON file.
 
@@ -35,14 +35,14 @@ class JSONLoader:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             raise DataFormatError(f"Invalid JSON format: {e}")
 
         return self._validate_structure(data)
 
-    def _validate_structure(self, data: Any) -> List[Dict[str, Any]]:
+    def _validate_structure(self, data: Any) -> list[dict[str, Any]]:
         """
         Validate and normalize JSON structure.
 
@@ -66,7 +66,7 @@ class JSONLoader:
 class JSONLLoader:
     """Loader for JSONL (JSON Lines) format datasets."""
 
-    def load(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def load(self, file_path: Union[str, Path]) -> list[dict[str, Any]]:
         """
         Load dataset from JSONL file.
 
@@ -87,7 +87,7 @@ class JSONLLoader:
 
         data = []
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
 
@@ -109,11 +109,11 @@ class DatasetLoader:
 
     def __init__(self):
         self._loaders = {
-            'json': JSONLoader(),
-            'jsonl': JSONLLoader(),
+            "json": JSONLoader(),
+            "jsonl": JSONLLoader(),
         }
 
-    def load(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def load(self, file_path: Union[str, Path]) -> list[dict[str, Any]]:
         """
         Load dataset with automatic format detection.
 
@@ -149,9 +149,9 @@ class DatasetLoader:
         path_obj = Path(file_path)
         suffix = path_obj.suffix.lower()
 
-        if suffix == '.json':
-            return 'json'
-        elif suffix == '.jsonl':
-            return 'jsonl'
+        if suffix == ".json":
+            return "json"
+        elif suffix == ".jsonl":
+            return "jsonl"
         else:
             raise DataFormatError(f"Unsupported file format: {suffix}")

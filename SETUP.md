@@ -182,13 +182,13 @@ Edit `train.yml` for training parameters:
 model:
   name: "meta-llama/Llama-2-7b-hf"
   quantization: "4bit"
-  
+
 training:
   method: "lora"
   batch_size: 4
   learning_rate: 2e-4
   num_epochs: 3
-  
+
 lora:
   r: 16
   alpha: 32
@@ -363,7 +363,7 @@ After successful setup:
    ```bash
    # View model implementations
    ls src/finetune/models/
-   
+
    # Run specific tests to understand functionality
    pytest tests/unit/test_mlx_models.py -v
    ```
@@ -371,7 +371,7 @@ After successful setup:
 2. **Try loading a model**
    ```python
    from finetune.models.manager import ModelManager
-   
+
    manager = ModelManager()
    # Small model for testing
    model = manager.load_model("gpt2")

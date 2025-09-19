@@ -6,12 +6,24 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from loguru import logger
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from loguru import logger
 
-from finetune.config import TrainingConfig, ModelConfig, DataConfig, LoRAConfig, OptimizationConfig, ConfigManager, ConfigProfile
-from finetune.training.workflow import FineTuningWorkflow, create_training_workflow_from_config, create_quick_workflow
+from finetune.config import (
+    ConfigManager,
+    ConfigProfile,
+    DataConfig,
+    LoRAConfig,
+    ModelConfig,
+    OptimizationConfig,
+    TrainingConfig,
+)
+from finetune.training.workflow import (
+    FineTuningWorkflow,
+    create_quick_workflow,
+    create_training_workflow_from_config,
+)
 
 app = typer.Typer()
 console = Console()
@@ -30,7 +42,9 @@ def start(
     profile: Optional[str] = typer.Option(
         None, "--profile", "-p", help="Configuration profile (chat, instruction, code)"
     ),
-    template: str = typer.Option("alpaca", "--template", "-t", help="Prompt template (alpaca, chatml, llama)"),
+    template: str = typer.Option(
+        "alpaca", "--template", "-t", help="Prompt template (alpaca, chatml, llama)"
+    ),
     epochs: int = typer.Option(3, "--epochs", "-e", help="Number of training epochs"),
     batch_size: int = typer.Option(2, "--batch-size", "-b", help="Training batch size"),
     learning_rate: float = typer.Option(2e-4, "--lr", help="Learning rate"),
@@ -38,11 +52,13 @@ def start(
     lora_alpha: float = typer.Option(16.0, "--lora-alpha", "-a", help="LoRA alpha"),
     validation_split: float = typer.Option(0.1, "--val-split", help="Validation split ratio"),
     resume: Optional[Path] = typer.Option(None, "--resume", help="Resume from checkpoint"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without training"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate configuration without training"
+    ),
 ):
     """Start a fine-tuning run with LoRA."""
 
-    console.print(f"[bold cyan]🚀 FineTune - Apple Silicon Optimized Training[/bold cyan]")
+    console.print("[bold cyan]🚀 FineTune - Apple Silicon Optimized Training[/bold cyan]")
     console.print()
 
     # Validate inputs
@@ -56,7 +72,7 @@ def start(
             console.print(f"[blue]📋 Loading configuration from: {config}[/blue]")
             workflow = create_training_workflow_from_config(str(config))
         else:
-            console.print(f"[blue]📋 Creating configuration...[/blue]")
+            console.print("[blue]📋 Creating configuration...[/blue]")
 
             # Create configuration from command line arguments
             training_config = TrainingConfig(
@@ -95,7 +111,6 @@ def start(
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-
             task = progress.add_task("Preparing for training...", total=None)
 
             # Execute training workflow
@@ -152,11 +167,13 @@ def quick(
     model: str = typer.Argument(..., help="Model name"),
     dataset: Path = typer.Argument(..., help="Path to training dataset"),
     template: str = typer.Option("alpaca", "--template", "-t", help="Prompt template"),
-    output_dir: Path = typer.Option(Path("./quick_output"), "--output", "-o", help="Output directory"),
+    output_dir: Path = typer.Option(
+        Path("./quick_output"), "--output", "-o", help="Output directory"
+    ),
 ):
     """Quick training run with minimal configuration."""
 
-    console.print(f"[bold cyan]⚡ Quick Fine-Tuning[/bold cyan]")
+    console.print("[bold cyan]⚡ Quick Fine-Tuning[/bold cyan]")
 
     if not dataset.exists():
         console.print(f"[red]❌ Dataset not found: {dataset}[/red]")
@@ -182,7 +199,7 @@ def quick(
         # Save model
         model_path = workflow.save_model()
 
-        console.print(f"[green]✅ Quick training completed![/green]")
+        console.print("[green]✅ Quick training completed![/green]")
         console.print(f"[green]📁 Model saved to: {model_path}[/green]")
 
     except Exception as e:
@@ -196,7 +213,7 @@ def validate(
 ):
     """Validate a training configuration."""
 
-    console.print(f"[bold cyan]🔍 Validating Configuration[/bold cyan]")
+    console.print("[bold cyan]🔍 Validating Configuration[/bold cyan]")
 
     if not config.exists():
         console.print(f"[red]❌ Configuration file not found: {config}[/red]")
@@ -207,11 +224,12 @@ def validate(
         manager = ConfigManager()
         training_config = manager.load_config(config)
 
-        console.print(f"[green]✅ Configuration is valid[/green]")
+        console.print("[green]✅ Configuration is valid[/green]")
         _display_config(training_config)
 
         # Run additional validation
         from finetune.config import ConfigValidator
+
         validator = ConfigValidator()
         warnings = validator.validate(training_config)
 

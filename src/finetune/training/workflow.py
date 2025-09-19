@@ -5,19 +5,18 @@ Connects configuration, data loading, templates, LoRA training, and model manage
 for a complete fine-tuning pipeline.
 """
 
-import tempfile
-import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
 
 import mlx.core as mx
 from loguru import logger
 
-from finetune.config import TrainingConfig, ConfigManager
-from finetune.data import DatasetLoader, TemplateRegistry, DatasetValidator
+from finetune.config import ConfigManager, TrainingConfig
+from finetune.data import DatasetLoader, DatasetValidator, TemplateRegistry
 from finetune.models.manager import ModelManager
 from finetune.training.lora import LoRAConfig
-from finetune.training.trainer import LoRATrainer, TrainingConfig as LegacyTrainingConfig
+from finetune.training.trainer import LoRATrainer
+from finetune.training.trainer import TrainingConfig as LegacyTrainingConfig
 
 
 class FineTuningWorkflow:
@@ -68,11 +67,13 @@ class FineTuningWorkflow:
         raw_train_data = self.dataset_loader.load(self.config.data.train_file)
 
         # Validate dataset
-        validator = DatasetValidator(['instruction', 'output'])
+        validator = DatasetValidator(["instruction", "output"])
         validator.validate(raw_train_data)
         summary = validator.get_summary(raw_train_data)
-        logger.info(f"Training dataset: {summary['total_items']} examples, "
-                   f"avg instruction length: {summary['avg_instruction_length']:.1f}")
+        logger.info(
+            f"Training dataset: {summary['total_items']} examples, "
+            f"avg instruction length: {summary['avg_instruction_length']:.1f}"
+        )
 
         # Load validation data if provided
         raw_eval_data = None
@@ -93,29 +94,11 @@ class FineTuningWorkflow:
         template = self.template_registry.get_template(self.config.data.template)
         logger.info(f"Applying {self.config.data.template} template...")
 
-        # Format training data
-        formatted_train = []
-        for item in raw_train_data:
-            try:
-                formatted_text = template.format(item)
-                formatted_train.append(formatted_text)
-            except Exception as e:
-                logger.warning(f"Failed to format item: {e}")
-                continue
-
-        # Format validation data
-        formatted_eval = []
-        if raw_eval_data:
-            for item in raw_eval_data:
-                try:
-                    formatted_text = template.format(item)
-                    formatted_eval.append(formatted_text)
-                except Exception as e:
-                    logger.warning(f"Failed to format eval item: {e}")
-                    continue
-
-        self.train_dataset = formatted_train
-        self.eval_dataset = formatted_eval if formatted_eval else None
+        # NOTE: We no longer format the text here. The raw, structured data
+        # will be passed to the trainer, which will use the tokenizer's chat
+        # template for correct formatting. This was a key bug.
+        self.train_dataset = raw_train_data
+        self.eval_dataset = raw_eval_data if raw_eval_data else None
 
         logger.info(f"Prepared {len(self.train_dataset)} training examples")
         if self.eval_dataset:
@@ -162,7 +145,9 @@ class FineTuningWorkflow:
 
         logger.info("LoRA trainer initialized successfully")
 
-    def tokenize_dataset(self, texts: List[str], max_length: Optional[int] = None) -> List[Dict[str, mx.array]]:
+    def tokenize_dataset(
+        self, texts: list[str], max_length: Optional[int] = None
+    ) -> list[dict[str, mx.array]]:
         """
         Tokenize text dataset for training.
 
@@ -184,14 +169,16 @@ class FineTuningWorkflow:
             tokens = list(range(min(len(text.split()), max_length)))  # Dummy tokenization
 
             if len(tokens) > 0:
-                tokenized.append({
-                    "input_ids": mx.array(tokens),
-                    "attention_mask": mx.array([1] * len(tokens)),
-                })
+                tokenized.append(
+                    {
+                        "input_ids": mx.array(tokens),
+                        "attention_mask": mx.array([1] * len(tokens)),
+                    }
+                )
 
         return tokenized
 
-    def run_training(self) -> Dict[str, Any]:
+    def run_training(self) -> dict[str, Any]:
         """
         Execute the complete training workflow.
 
@@ -228,8 +215,11 @@ class FineTuningWorkflow:
             logger.error(f"Training failed: {e}")
             raise
 
-    def _run_training_loop(self, train_data: List[Dict[str, mx.array]],
-                          eval_data: Optional[List[Dict[str, mx.array]]] = None) -> Dict[str, Any]:
+    def _run_training_loop(
+        self,
+        train_data: list[dict[str, mx.array]],
+        eval_data: Optional[list[dict[str, mx.array]]] = None,
+    ) -> dict[str, Any]:
         """
         Run the actual training loop.
 
@@ -244,7 +234,9 @@ class FineTuningWorkflow:
             raise ValueError("Trainer must be initialized")
 
         # Training loop simulation - in real implementation, use trainer.train()
-        logger.info(f"Training with {len(train_data)} examples for {self.config.optimization.epochs} epochs")
+        logger.info(
+            f"Training with {len(train_data)} examples for {self.config.optimization.epochs} epochs"
+        )
 
         results = {
             "training_loss": [],
@@ -263,7 +255,9 @@ class FineTuningWorkflow:
                 # Simulate training step
                 try:
                     # In real implementation: loss = trainer.training_step(batch)
-                    step_loss = 0.5 * (1.0 - (step + epoch * len(train_data)) / total_steps)  # Decreasing loss
+                    step_loss = 0.5 * (
+                        1.0 - (step + epoch * len(train_data)) / total_steps
+                    )  # Decreasing loss
                     epoch_loss += step_loss
 
                     results["training_loss"].append(step_loss)
@@ -271,9 +265,11 @@ class FineTuningWorkflow:
                     results["global_step"] += 1
 
                     if step % 10 == 0:
-                        logger.info(f"Epoch {epoch+1}/{self.config.optimization.epochs}, "
-                                  f"Step {step+1}/{len(train_data)}, "
-                                  f"Loss: {step_loss:.4f}")
+                        logger.info(
+                            f"Epoch {epoch+1}/{self.config.optimization.epochs}, "
+                            f"Step {step+1}/{len(train_data)}, "
+                            f"Loss: {step_loss:.4f}"
+                        )
 
                 except Exception as e:
                     logger.warning(f"Training step failed: {e}")
@@ -286,14 +282,16 @@ class FineTuningWorkflow:
             if eval_data and (epoch + 1) % 1 == 0:  # Evaluate every epoch
                 eval_loss = self._evaluate(eval_data)
                 results["eval_loss"].append(eval_loss)
-                logger.info(f"Epoch {epoch+1} - Train Loss: {avg_epoch_loss:.4f}, "
-                          f"Eval Loss: {eval_loss:.4f}")
+                logger.info(
+                    f"Epoch {epoch+1} - Train Loss: {avg_epoch_loss:.4f}, "
+                    f"Eval Loss: {eval_loss:.4f}"
+                )
             else:
                 logger.info(f"Epoch {epoch+1} - Train Loss: {avg_epoch_loss:.4f}")
 
         return results
 
-    def _evaluate(self, eval_data: List[Dict[str, mx.array]]) -> float:
+    def _evaluate(self, eval_data: list[dict[str, mx.array]]) -> float:
         """
         Evaluate model on validation data.
 
@@ -356,10 +354,7 @@ def create_training_workflow_from_config(config_path: str) -> FineTuningWorkflow
 
 
 def create_quick_workflow(
-    model_name: str,
-    data_file: str,
-    template: str = "alpaca",
-    output_dir: str = "./output"
+    model_name: str, data_file: str, template: str = "alpaca", output_dir: str = "./output"
 ) -> FineTuningWorkflow:
     """
     Create a quick training workflow with minimal configuration.
@@ -373,7 +368,7 @@ def create_quick_workflow(
     Returns:
         Configured training workflow
     """
-    from finetune.config import ModelConfig, DataConfig, LoRAConfig, OptimizationConfig
+    from finetune.config import DataConfig, LoRAConfig, ModelConfig, OptimizationConfig
 
     config = TrainingConfig(
         model=ModelConfig(name=model_name),

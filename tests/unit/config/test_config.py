@@ -5,23 +5,22 @@ Tests are written first to drive the implementation of configuration
 management including train.yml, profiles, and validation.
 """
 
-import pytest
-import tempfile
 import os
-import yaml
+import tempfile
 from pathlib import Path
-from typing import Dict, Any
 
+import pytest
+import yaml
 from finetune.config import (
-    TrainingConfig,
-    ModelConfig,
-    DataConfig,
-    LoRAConfig,
-    OptimizationConfig,
+    ConfigError,
     ConfigManager,
     ConfigProfile,
-    ConfigError,
     ConfigValidator,
+    DataConfig,
+    LoRAConfig,
+    ModelConfig,
+    OptimizationConfig,
+    TrainingConfig,
 )
 
 
@@ -32,24 +31,10 @@ class TestTrainingConfig:
         """Test creating training config with required fields."""
         # Arrange & Act
         config = TrainingConfig(
-            model=ModelConfig(
-                name="meta-llama/Llama-2-7b-hf",
-                cache_dir="/tmp/models"
-            ),
-            data=DataConfig(
-                train_file="train.jsonl",
-                template="alpaca"
-            ),
-            lora=LoRAConfig(
-                r=8,
-                alpha=16.0,
-                dropout=0.1
-            ),
-            optimization=OptimizationConfig(
-                learning_rate=1e-4,
-                batch_size=4,
-                epochs=3
-            )
+            model=ModelConfig(name="meta-llama/Llama-2-7b-hf", cache_dir="/tmp/models"),
+            data=DataConfig(train_file="train.jsonl", template="alpaca"),
+            lora=LoRAConfig(r=8, alpha=16.0, dropout=0.1),
+            optimization=OptimizationConfig(learning_rate=1e-4, batch_size=4, epochs=3),
         )
 
         # Assert
@@ -62,8 +47,7 @@ class TestTrainingConfig:
         """Test training config with default values."""
         # Arrange & Act
         config = TrainingConfig(
-            model=ModelConfig(name="test-model"),
-            data=DataConfig(train_file="train.jsonl")
+            model=ModelConfig(name="test-model"), data=DataConfig(train_file="train.jsonl")
         )
 
         # Assert - defaults should be applied
@@ -79,7 +63,7 @@ class TestTrainingConfig:
             TrainingConfig(
                 model=ModelConfig(name="test"),
                 data=DataConfig(train_file="train.jsonl"),
-                optimization=OptimizationConfig(learning_rate=-1.0)
+                optimization=OptimizationConfig(learning_rate=-1.0),
             )
 
         # Test invalid batch size
@@ -87,7 +71,7 @@ class TestTrainingConfig:
             TrainingConfig(
                 model=ModelConfig(name="test"),
                 data=DataConfig(train_file="train.jsonl"),
-                optimization=OptimizationConfig(batch_size=0)
+                optimization=OptimizationConfig(batch_size=0),
             )
 
     def test_training_config_to_dict(self):
@@ -96,7 +80,7 @@ class TestTrainingConfig:
         config = TrainingConfig(
             model=ModelConfig(name="test-model"),
             data=DataConfig(train_file="train.jsonl", template="chatml"),
-            lora=LoRAConfig(r=16, alpha=32.0)
+            lora=LoRAConfig(r=16, alpha=32.0),
         )
 
         # Act
@@ -116,7 +100,7 @@ class TestTrainingConfig:
             "model": {"name": "test-model", "cache_dir": "/tmp"},
             "data": {"train_file": "train.jsonl", "validation_file": "val.jsonl"},
             "lora": {"r": 32, "alpha": 64.0, "dropout": 0.05},
-            "optimization": {"learning_rate": 5e-4, "batch_size": 8}
+            "optimization": {"learning_rate": 5e-4, "batch_size": 8},
         }
 
         # Act
@@ -185,9 +169,7 @@ class TestDataConfig:
         try:
             # Act
             config = DataConfig(
-                train_file=train_path,
-                validation_file=val_path,
-                validate_files=True
+                train_file=train_path, validation_file=val_path, validate_files=True
             )
 
             # Assert
@@ -281,10 +263,7 @@ class TestOptimizationConfig:
     def test_optimization_config_scheduler_options(self):
         """Test learning rate scheduler options."""
         # Arrange & Act
-        config = OptimizationConfig(
-            lr_scheduler="cosine",
-            warmup_steps=500
-        )
+        config = OptimizationConfig(lr_scheduler="cosine", warmup_steps=500)
 
         # Assert
         assert config.lr_scheduler == "cosine"
@@ -301,10 +280,10 @@ class TestConfigManager:
             "model": {"name": "test-model"},
             "data": {"train_file": "train.jsonl"},
             "lora": {"r": 16, "alpha": 32.0},
-            "optimization": {"learning_rate": 1e-4, "batch_size": 4}
+            "optimization": {"learning_rate": 1e-4, "batch_size": 4},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             yaml.dump(config_data, f)
             config_path = f.name
 
@@ -327,10 +306,10 @@ class TestConfigManager:
         config = TrainingConfig(
             model=ModelConfig(name="test-model"),
             data=DataConfig(train_file="train.jsonl"),
-            lora=LoRAConfig(r=32)
+            lora=LoRAConfig(r=32),
         )
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             config_path = f.name
 
         try:
@@ -351,10 +330,10 @@ class TestConfigManager:
         # Arrange - create invalid config file
         invalid_config = {
             "model": {"name": ""},  # Invalid empty name
-            "data": {"train_file": "train.jsonl"}
+            "data": {"train_file": "train.jsonl"},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             yaml.dump(invalid_config, f)
             config_path = f.name
 
@@ -420,8 +399,7 @@ class TestConfigProfile:
         """Test applying profile to existing config."""
         # Arrange
         base_config = TrainingConfig(
-            model=ModelConfig(name="test-model"),
-            data=DataConfig(train_file="train.jsonl")
+            model=ModelConfig(name="test-model"), data=DataConfig(train_file="train.jsonl")
         )
 
         # Act
@@ -443,7 +421,7 @@ class TestConfigValidator:
         config = TrainingConfig(
             model=ModelConfig(name="test-model", load_in_4bit=True),
             data=DataConfig(train_file="train.jsonl"),
-            lora=LoRAConfig(r=128)  # Very high rank
+            lora=LoRAConfig(r=128),  # Very high rank
         )
 
         # Act
@@ -459,7 +437,7 @@ class TestConfigValidator:
         config = TrainingConfig(
             model=ModelConfig(name="test-model"),
             data=DataConfig(train_file="train.jsonl", validation_file="val.jsonl"),
-            optimization=OptimizationConfig(batch_size=32, gradient_accumulation_steps=1)
+            optimization=OptimizationConfig(batch_size=32, gradient_accumulation_steps=1),
         )
 
         # Act
@@ -476,7 +454,7 @@ class TestConfigValidator:
         config = TrainingConfig(
             model=ModelConfig(name="meta-llama/Llama-2-7b-hf"),
             data=DataConfig(train_file="train.jsonl"),
-            optimization=OptimizationConfig(batch_size=8)
+            optimization=OptimizationConfig(batch_size=8),
         )
 
         # Act
@@ -514,18 +492,19 @@ class TestConfigIntegration:
         # Create test data file
         test_data = [
             {"instruction": "What is Python?", "output": "A programming language"},
-            {"instruction": "What is AI?", "output": "Artificial Intelligence"}
+            {"instruction": "What is AI?", "output": "Artificial Intelligence"},
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             import json
+
             json.dump(test_data, f)
             data_path = f.name
 
         try:
             config = TrainingConfig(
                 model=ModelConfig(name="test-model"),
-                data=DataConfig(train_file=data_path, template="alpaca")
+                data=DataConfig(train_file=data_path, template="alpaca"),
             )
 
             # Act
@@ -548,32 +527,26 @@ class TestConfigIntegration:
         # Arrange
         original_config = TrainingConfig(
             model=ModelConfig(
-                name="meta-llama/Llama-2-7b-hf",
-                cache_dir="/tmp/models",
-                load_in_4bit=True
+                name="meta-llama/Llama-2-7b-hf", cache_dir="/tmp/models", load_in_4bit=True
             ),
             data=DataConfig(
                 train_file="train.jsonl",
                 validation_file="val.jsonl",
                 template="chatml",
-                max_length=2048
+                max_length=2048,
             ),
             lora=LoRAConfig(
                 r=32,
                 alpha=64.0,
                 dropout=0.05,
-                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
             ),
             optimization=OptimizationConfig(
-                learning_rate=1e-4,
-                batch_size=4,
-                epochs=5,
-                warmup_steps=200,
-                lr_scheduler="cosine"
-            )
+                learning_rate=1e-4, batch_size=4, epochs=5, warmup_steps=200, lr_scheduler="cosine"
+            ),
         )
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             config_path = f.name
 
         try:
@@ -590,7 +563,9 @@ class TestConfigIntegration:
             assert loaded_config.data.max_length == original_config.data.max_length
             assert loaded_config.lora.r == original_config.lora.r
             assert loaded_config.lora.target_modules == original_config.lora.target_modules
-            assert loaded_config.optimization.lr_scheduler == original_config.optimization.lr_scheduler
+            assert (
+                loaded_config.optimization.lr_scheduler == original_config.optimization.lr_scheduler
+            )
         finally:
             os.unlink(config_path)
 
@@ -603,14 +578,14 @@ def sample_config():
         model=ModelConfig(name="test-model"),
         data=DataConfig(train_file="train.jsonl"),
         lora=LoRAConfig(r=16, alpha=32.0),
-        optimization=OptimizationConfig(learning_rate=2e-4, batch_size=4)
+        optimization=OptimizationConfig(learning_rate=2e-4, batch_size=4),
     )
 
 
 @pytest.fixture
 def temp_config_file(sample_config):
     """Create temporary config file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
         config_dict = sample_config.to_dict()
         yaml.dump(config_dict, f)
         temp_path = f.name

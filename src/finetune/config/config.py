@@ -7,12 +7,12 @@ and validation logic.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-import os
+from typing import Any, Optional
 
 
 class ConfigError(Exception):
     """Raised when configuration is invalid or inconsistent."""
+
     pass
 
 
@@ -62,7 +62,9 @@ class DataConfig:
         # Validate template name
         valid_templates = ["alpaca", "chatml", "llama"]
         if self.template not in valid_templates:
-            raise ConfigError(f"Unknown template '{self.template}'. Valid options: {valid_templates}")
+            raise ConfigError(
+                f"Unknown template '{self.template}'. Valid options: {valid_templates}"
+            )
 
         if self.validation_split < 0 or self.validation_split > 1:
             raise ConfigError("Validation split must be between 0 and 1")
@@ -75,7 +77,7 @@ class LoRAConfig:
     r: int = 8
     alpha: float = 16.0
     dropout: float = 0.1
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
 
     def __post_init__(self):
         """Validate LoRA configuration."""
@@ -124,7 +126,9 @@ class OptimizationConfig:
 
         valid_schedulers = ["linear", "cosine", "constant", "constant_with_warmup"]
         if self.lr_scheduler not in valid_schedulers:
-            raise ConfigError(f"Unknown scheduler '{self.lr_scheduler}'. Valid options: {valid_schedulers}")
+            raise ConfigError(
+                f"Unknown scheduler '{self.lr_scheduler}'. Valid options: {valid_schedulers}"
+            )
 
 
 @dataclass
@@ -147,16 +151,20 @@ class TrainingConfig:
         if self.optimization.batch_size <= 0:
             raise ConfigError("Batch size must be positive")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary."""
+
         def _asdict_recursive(obj):
-            if hasattr(obj, '__dict__'):
+            if hasattr(obj, "__dict__"):
                 result = {}
                 for key, value in obj.__dict__.items():
-                    if hasattr(value, '__dict__'):
+                    if hasattr(value, "__dict__"):
                         result[key] = _asdict_recursive(value)
                     elif isinstance(value, list):
-                        result[key] = [_asdict_recursive(item) if hasattr(item, '__dict__') else item for item in value]
+                        result[key] = [
+                            _asdict_recursive(item) if hasattr(item, "__dict__") else item
+                            for item in value
+                        ]
                     else:
                         result[key] = value
                 return result
@@ -165,7 +173,7 @@ class TrainingConfig:
         return _asdict_recursive(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrainingConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "TrainingConfig":
         """Create configuration from dictionary."""
         # Extract nested configs
         model_config = ModelConfig(**data.get("model", {}))

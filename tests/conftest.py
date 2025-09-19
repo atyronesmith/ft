@@ -2,14 +2,15 @@
 Pytest configuration and shared fixtures.
 """
 
-import pytest
-import tempfile
-import json
-import warnings
 import gc
+import json
+import tempfile
+import warnings
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock
+
 import numpy as np
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +21,7 @@ def suppress_resource_warnings():
 
     # Close any lingering SQLite connections
     import sqlite3
+
     sqlite3.enable_callback_tracebacks(False)
 
     with warnings.catch_warnings():

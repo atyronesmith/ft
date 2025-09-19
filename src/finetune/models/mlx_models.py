@@ -21,14 +21,14 @@ from finetune.training.lora import LoRAConfig, apply_lora_to_model, get_lora_tra
 
 if MLX_AVAILABLE:
 
-    def flatten_params(params, prefix=''):
+    def flatten_params(params, prefix=""):
         flat = {}
         for k, v in params.items():
             full_key = f"{prefix}{k}." if prefix else f"{k}."
             if isinstance(v, dict):
                 flat.update(flatten_params(v, full_key))
-            elif hasattr(v, 'shape'):
-                flat[full_key.rstrip('.')] = v
+            elif hasattr(v, "shape"):
+                flat[full_key.rstrip(".")] = v
             # else: skip non-array values
         return flat
 
@@ -286,6 +286,7 @@ if MLX_AVAILABLE:
             # Save weights using MLX native format
             # Flatten nested parameter dicts
             weights = {}
+
             def flatten_params(params, prefix=""):
                 for k, v in params.items():
                     if isinstance(v, dict):
@@ -293,10 +294,11 @@ if MLX_AVAILABLE:
                     elif isinstance(v, list):
                         # Handle lists of modules (like layers)
                         for i, item in enumerate(v):
-                            if hasattr(item, 'parameters'):
+                            if hasattr(item, "parameters"):
                                 flatten_params(dict(item.parameters()), f"{prefix}{k}.{i}.")
-                    elif hasattr(v, 'size'):
+                    elif hasattr(v, "size"):
                         weights[prefix + k] = v
+
             flatten_params(dict(self.parameters()))
             mx.savez(str(path / "model.npz"), **weights)
 
@@ -323,7 +325,7 @@ if MLX_AVAILABLE:
         @property
         def num_parameters(self) -> int:
             """Get total number of parameters."""
-            return sum(v.size for v in self.parameters().values() if hasattr(v, 'size'))
+            return sum(v.size for v in self.parameters().values() if hasattr(v, "size"))
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""
@@ -339,16 +341,16 @@ if MLX_AVAILABLE:
             top_level_params = {}
             layer_params = {}
             for key, value in parameters.items():
-                if key.startswith('layers.'):
+                if key.startswith("layers."):
                     # Extract layer index and parameter path
-                    parts = key.split('.', 2)  # ['layers', '0', 'self_attn.q_proj.weight']
+                    parts = key.split(".", 2)  # ['layers', '0', 'self_attn.q_proj.weight']
                     layer_idx = int(parts[1])
                     param_path = parts[2]
                     if layer_idx not in layer_params:
                         layer_params[layer_idx] = {}
                     # Rebuild nested structure for this layer
                     current = layer_params[layer_idx]
-                    path_parts = param_path.split('.')
+                    path_parts = param_path.split(".")
                     for part in path_parts[:-1]:
                         if part not in current:
                             current[part] = {}
@@ -356,8 +358,8 @@ if MLX_AVAILABLE:
                     current[path_parts[-1]] = value
                 else:
                     # Handle nested top-level parameters
-                    if '.' in key:
-                        parts = key.split('.')
+                    if "." in key:
+                        parts = key.split(".")
                         current = top_level_params
                         for part in parts[:-1]:
                             if part not in current:
@@ -383,12 +385,12 @@ if MLX_AVAILABLE:
             (dotted_name, parameter) pairs similar to PyTorch.
             """
             params = flatten_params(super().parameters())
-            if hasattr(self, 'layers') and isinstance(self.layers, list):
+            if hasattr(self, "layers") and isinstance(self.layers, list):
                 for i, layer in enumerate(self.layers):
                     if isinstance(layer, nn.Module):
                         layer_params = flatten_params(layer.parameters())
                         for k, v in layer_params.items():
-                            params[f'layers.{i}.{k}'] = v
+                            params[f"layers.{i}.{k}"] = v
             return params
 
         def named_parameters(self):
@@ -527,9 +529,9 @@ if MLX_AVAILABLE:
             layer_params = {}
 
             for key, value in parameters.items():
-                if key.startswith('layers.'):
+                if key.startswith("layers."):
                     # Extract layer index and parameter path
-                    parts = key.split('.', 2)  # ['layers', '0', 'attn.c_attn.weight']
+                    parts = key.split(".", 2)  # ['layers', '0', 'attn.c_attn.weight']
                     layer_idx = int(parts[1])
                     param_path = parts[2]
 
@@ -538,7 +540,7 @@ if MLX_AVAILABLE:
 
                     # Rebuild nested structure for this layer
                     current = layer_params[layer_idx]
-                    path_parts = param_path.split('.')
+                    path_parts = param_path.split(".")
                     for part in path_parts[:-1]:
                         if part not in current:
                             current[part] = {}
@@ -546,8 +548,8 @@ if MLX_AVAILABLE:
                     current[path_parts[-1]] = value
                 else:
                     # Handle nested top-level parameters
-                    if '.' in key:
-                        parts = key.split('.')
+                    if "." in key:
+                        parts = key.split(".")
                         current = top_level_params
                         for part in parts[:-1]:
                             if part not in current:
@@ -582,6 +584,7 @@ if MLX_AVAILABLE:
         def num_parameters(self) -> int:
             """Get total number of parameters."""
             total = 0
+
             def count_params(params):
                 nonlocal total
                 for k, v in params.items():
@@ -590,10 +593,11 @@ if MLX_AVAILABLE:
                     elif isinstance(v, list):
                         # Handle lists of modules (like layers)
                         for item in v:
-                            if hasattr(item, 'parameters'):
+                            if hasattr(item, "parameters"):
                                 count_params(dict(item.parameters()))
-                    elif hasattr(v, 'size'):
+                    elif hasattr(v, "size"):
                         total += v.size
+
             count_params(dict(self.parameters()))
             return total
 
@@ -610,12 +614,12 @@ if MLX_AVAILABLE:
 
         def parameters(self):
             params = flatten_params(super().parameters())
-            if hasattr(self, 'layers') and isinstance(self.layers, list):
+            if hasattr(self, "layers") and isinstance(self.layers, list):
                 for i, layer in enumerate(self.layers):
                     if isinstance(layer, nn.Module):
                         layer_params = flatten_params(layer.parameters())
                         for k, v in layer_params.items():
-                            params[f'layers.{i}.{k}'] = v
+                            params[f"layers.{i}.{k}"] = v
             return params
 
     # Model registry for Hugging Face transformer architectures
@@ -626,27 +630,22 @@ if MLX_AVAILABLE:
         "llama2": MLXLlamaModel,
         "llama3": MLXLlamaModel,
         "code_llama": MLXLlamaModel,
-
         # Mistral family (Mistral AI)
         "mistral": MLXLlamaModel,  # Same architecture as Llama
         "mixtral": MLXLlamaModel,  # MoE version, same base structure
-
         # Google models
         "gemma": MLXLlamaModel,  # Similar to Llama architecture
-
         # GPT family (OpenAI + derivatives)
         "gpt2": MLXGPTModel,
         "gpt-j": MLXGPTModel,
         "gpt-neo": MLXGPTModel,
         "gpt-neox": MLXGPTModel,
-
         # Microsoft models
         "phi": MLXGPTModel,  # Phi-2, Phi-3 series
         "dialoGPT": MLXGPTModel,  # Our current test case
-
         # Other popular decoder-only models
         "falcon": MLXLlamaModel,  # Similar architecture
-        "qwen": MLXLlamaModel,    # Alibaba's model, similar architecture
+        "qwen": MLXLlamaModel,  # Alibaba's model, similar architecture
     }
 
     def get_mlx_model(config: ModelConfig) -> BaseModel:

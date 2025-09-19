@@ -5,13 +5,12 @@ Tests the integration of all Phase 2 components: configuration, data loading,
 templates, LoRA training, and CLI commands.
 """
 
-import pytest
-import tempfile
 import json
 import os
-from pathlib import Path
+import tempfile
 
-from finetune.config import TrainingConfig, ModelConfig, DataConfig, LoRAConfig, OptimizationConfig
+import pytest
+from finetune.config import DataConfig, LoRAConfig, ModelConfig, OptimizationConfig, TrainingConfig
 from finetune.training.workflow import FineTuningWorkflow, create_quick_workflow
 
 
@@ -24,19 +23,19 @@ class TestEndToEndWorkflow:
         data = [
             {
                 "instruction": "What is Python?",
-                "output": "Python is a high-level programming language known for its simplicity and readability."
+                "output": "Python is a high-level programming language known for its simplicity and readability.",
             },
             {
                 "instruction": "What is machine learning?",
-                "output": "Machine learning is a subset of AI that enables computers to learn from data."
+                "output": "Machine learning is a subset of AI that enables computers to learn from data.",
             },
             {
                 "instruction": "Explain neural networks",
-                "output": "Neural networks are computing systems inspired by biological neural networks."
-            }
+                "output": "Neural networks are computing systems inspired by biological neural networks.",
+            },
         ]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
 
@@ -48,7 +47,9 @@ class TestEndToEndWorkflow:
         """Create training configuration for testing."""
         return TrainingConfig(
             model=ModelConfig(name="test-model"),  # Use placeholder model for testing
-            data=DataConfig(train_file=sample_dataset, template="alpaca", validation_split=0.0),  # No validation split for testing
+            data=DataConfig(
+                train_file=sample_dataset, template="alpaca", validation_split=0.0
+            ),  # No validation split for testing
             lora=LoRAConfig(r=4, alpha=8.0),  # Small LoRA for testing
             optimization=OptimizationConfig(
                 learning_rate=1e-4,
@@ -89,7 +90,7 @@ class TestEndToEndWorkflow:
             model_name="test-model",
             data_file=sample_dataset,
             template="chatml",
-            output_dir="./quick_test"
+            output_dir="./quick_test",
         )
 
         assert workflow.config.model.name == "test-model"
@@ -181,7 +182,7 @@ class TestEndToEndWorkflow:
         )
 
         # Save to temporary YAML file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             config_path = f.name
 
         try:
@@ -190,6 +191,7 @@ class TestEndToEndWorkflow:
 
             # Load workflow from config file
             from finetune.training.workflow import create_training_workflow_from_config
+
             workflow = create_training_workflow_from_config(config_path)
 
             assert workflow.config.model.name == "test-model"

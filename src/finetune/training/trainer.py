@@ -24,6 +24,7 @@ from finetune.training.lora import (
 @dataclass
 class TrainingConfig:
     """Configuration for training."""
+
     learning_rate: float = 1e-5  # Lower rate for naturally stable gradients
     num_epochs: int = 3
     batch_size: int = 4
@@ -129,12 +130,22 @@ class LoRATrainer:
         # Forward pass
         # Ensure token ids are int32 for embedding indexing
         input_ids = input_ids.astype(mx.int32)
-        logits = model.forward(input_ids)
+        # Get model output
+        output = model.forward(input_ids)
+
+        # CORRECTED: The model's forward pass now returns a tuple (logits, cache) during inference.
+        # During training, we only care about the logits, so we unpack the tuple if it is one.
+        if isinstance(output, tuple):
+            logits = output[0]
+        else:
+            logits = output
+
+        # Cast to float32 for loss calculation
         logits = logits.astype(mx.float32)
 
         # Check for NaN in logits after forward pass
         if mx.any(mx.isnan(logits)) or mx.any(mx.isinf(logits)):
-            raise ValueError(f"Model forward pass produced NaN/Inf logits")
+            raise ValueError("Model forward pass produced NaN/Inf logits")
 
         # Clamp logits to stabilize softmax/CE
         logits = mx.clip(logits, -20.0, 20.0)
@@ -152,12 +163,12 @@ class LoRATrainer:
             # Labels are pre-shifted, just ensure logits match the label length
             if logits.shape[1] > labels.shape[1]:
                 # Trim logits to match pre-shifted labels
-                logits = logits[:, :labels.shape[1], :]
+                logits = logits[:, : labels.shape[1], :]
             elif logits.shape[1] < labels.shape[1]:
                 # This shouldn't happen, but handle gracefully
-                labels = labels[:, :logits.shape[1]]
+                labels = labels[:, : logits.shape[1]]
                 if mask is not None:
-                    mask = mask[:, :logits.shape[1]]
+                    mask = mask[:, : logits.shape[1]]
         # Flatten sequences
         B, L, V = logits.shape
         logits = logits.reshape(B * L, V)
@@ -168,7 +179,9 @@ class LoRATrainer:
         # Labels to correct dtype and range
         labels = labels.astype(mx.int32)
         try:
-            vocab_limit = int(getattr(getattr(model, "config", object()), "vocab_size", logits.shape[-1]))
+            vocab_limit = int(
+                getattr(getattr(model, "config", object()), "vocab_size", logits.shape[-1])
+            )
         except Exception:
             vocab_limit = logits.shape[-1]
         max_label = mx.array(vocab_limit - 1, dtype=mx.int32)
@@ -203,6 +216,7 @@ class LoRATrainer:
 
     def training_step(self, batch: dict[str, mx.array]) -> dict[str, float]:
         """Perform a single training step."""
+
         # Compute loss and gradients (MLX: use mx.value_and_grad with (model, batch))
         def loss_fn(model: BaseModel, batch_: dict[str, mx.array]) -> mx.array:
             return self.compute_loss(model, batch_)
@@ -221,7 +235,7 @@ class LoRATrainer:
             elif isinstance(g, list):
                 for i, v in enumerate(g):
                     check_grads_valid(v, f"{path}[{i}]")
-            elif hasattr(g, 'shape'):
+            elif hasattr(g, "shape"):
                 if mx.any(mx.isnan(g)) or mx.any(mx.isinf(g)):
                     raise ValueError(f"Gradient NaN/Inf detected at {path}")
 
@@ -229,8 +243,10 @@ class LoRATrainer:
 
         # Clip gradients (manual global-norm clipping, MLX has no clip_grad_norm)
         if self.training_config.max_grad_norm > 0:
+
             def global_norm(g) -> float:
                 total = 0.0
+
                 def accumulate(x):
                     nonlocal total
                     if isinstance(x, dict):
@@ -239,8 +255,9 @@ class LoRATrainer:
                     elif isinstance(x, list):
                         for v in x:
                             accumulate(v)
-                    elif hasattr(x, 'shape'):
+                    elif hasattr(x, "shape"):
                         total += float(mx.sum(x * x))
+
                 accumulate(g)
                 return math.sqrt(total) if total > 0.0 else 0.0
 
@@ -249,7 +266,7 @@ class LoRATrainer:
                     return {k: scale_tree(v, s) for k, v in x.items()}
                 if isinstance(x, list):
                     return [scale_tree(v, s) for v in x]
-                if hasattr(x, 'shape'):
+                if hasattr(x, "shape"):
                     return x * s
                 return x
 
@@ -257,16 +274,22 @@ class LoRATrainer:
             # Log gradient norm for monitoring training stability
             if self.global_step % self.training_config.logging_steps == 0:
                 if gn <= self.training_config.max_grad_norm:
-                    logger.debug(f"Step {self.global_step}: ✅ Stable gradient norm = {gn:.4f} (no clipping needed)")
+                    logger.debug(
+                        f"Step {self.global_step}: ✅ Stable gradient norm = {gn:.4f} (no clipping needed)"
+                    )
                 else:
-                    logger.debug(f"Step {self.global_step}: ⚠️  High gradient norm = {gn:.4f} (clipping required)")
+                    logger.debug(
+                        f"Step {self.global_step}: ⚠️  High gradient norm = {gn:.4f} (clipping required)"
+                    )
 
             if gn > self.training_config.max_grad_norm:
                 scale = self.training_config.max_grad_norm / (gn + 1e-6)
                 grads = scale_tree(grads, scale)
                 # Log clipping events less frequently to reduce noise
                 if self.global_step % (self.training_config.logging_steps * 5) == 0:
-                    logger.info(f"Step {self.global_step}: Clipped gradient norm from {gn:.4f} to {self.training_config.max_grad_norm}")
+                    logger.info(
+                        f"Step {self.global_step}: Clipped gradient norm from {gn:.4f} to {self.training_config.max_grad_norm}"
+                    )
             elif gn > 5.0:  # Warn about moderately high gradients
                 if self.global_step % self.training_config.logging_steps == 0:
                     logger.warning(f"Step {self.global_step}: Elevated gradient norm: {gn:.4f}")
@@ -287,11 +310,13 @@ class LoRATrainer:
                     check_params_valid(v, f"{path}.{k}")
             elif isinstance(params, list):
                 for i, v in enumerate(params):
-                    if hasattr(v, 'parameters'):
+                    if hasattr(v, "parameters"):
                         check_params_valid(v.parameters(), f"{path}[{i}]")
-            elif hasattr(params, 'shape'):
+            elif hasattr(params, "shape"):
                 if mx.any(mx.isnan(params)) or mx.any(mx.isinf(params)):
-                    raise ValueError(f"Parameter corruption detected at {path} after optimizer update")
+                    raise ValueError(
+                        f"Parameter corruption detected at {path} after optimizer update"
+                    )
 
         check_params_valid(self.model.parameters(), "model")
 
@@ -332,6 +357,7 @@ class LoRATrainer:
 
         # Save training state as JSON (avoid mx.save on dict)
         import json as _json
+
         state = {
             "global_step": self.global_step,
             "epoch": self.epoch,
@@ -340,7 +366,9 @@ class LoRATrainer:
         (checkpoint_dir / "training_state.json").write_text(_json.dumps(state, indent=2))
 
         # Save configs as JSON
-        (checkpoint_dir / "lora_config.json").write_text(_json.dumps(self.lora_config.__dict__, indent=2))
+        (checkpoint_dir / "lora_config.json").write_text(
+            _json.dumps(self.lora_config.__dict__, indent=2)
+        )
 
         logger.info(f"Saved checkpoint to {checkpoint_dir}")
 
@@ -353,6 +381,7 @@ class LoRATrainer:
 
         # Load training state from JSON
         import json as _json
+
         state = _json.loads((checkpoint_dir / "training_state.json").read_text())
         self.global_step = int(state.get("global_step", 0))
         self.epoch = int(state.get("epoch", 0))
@@ -367,7 +396,11 @@ class LoRATrainer:
 
         # Calculate total steps
         # If dataset already consists of tokenized dict batches, treat each as a step
-        if isinstance(self.train_dataset, list) and self.train_dataset and isinstance(self.train_dataset[0], dict):
+        if (
+            isinstance(self.train_dataset, list)
+            and self.train_dataset
+            and isinstance(self.train_dataset[0], dict)
+        ):
             steps_per_epoch = len(self.train_dataset)
         else:
             steps_per_epoch = len(self.train_dataset) // self.training_config.batch_size
@@ -378,13 +411,16 @@ class LoRATrainer:
 
         # Set up interrupt handling
         import signal
+
         interrupted = False
 
         def handle_interrupt(signum, frame):
             nonlocal interrupted
             if not interrupted:
                 interrupted = True
-                logger.warning("🛑 Training interrupted by user (Ctrl+C). Finishing current batch and stopping gracefully...")
+                logger.warning(
+                    "🛑 Training interrupted by user (Ctrl+C). Finishing current batch and stopping gracefully..."
+                )
                 logger.warning("Press Ctrl+C again to force exit immediately.")
             else:
                 logger.error("💥 Force exit requested. Stopping immediately.")
@@ -407,7 +443,9 @@ class LoRATrainer:
 
                 for _batch_idx, batch in enumerate(self.train_dataset):
                     if interrupted:
-                        logger.info(f"Training stopped at batch {_batch_idx + 1} due to user interrupt")
+                        logger.info(
+                            f"Training stopped at batch {_batch_idx + 1} due to user interrupt"
+                        )
                         break
 
                     # Training step
@@ -418,6 +456,7 @@ class LoRATrainer:
 
                     # Verbose progress logging for each batch step
                     import os
+
                     verbose_mode = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
                     if verbose_mode:
                         current_loss = metrics["loss"]

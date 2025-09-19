@@ -70,9 +70,8 @@ def list_models(
 @app.command()
 def pull(
     model_name: str = typer.Argument(..., help="Model name from HuggingFace"),
-    quantization: str | None = typer.Option(
-        None, "--quantization", "-q", help="Quantization (4bit, 8bit)"
-    ),
+    quantization: str
+    | None = typer.Option(None, "--quantization", "-q", help="Quantization (4bit, 8bit)"),
     revision: str | None = typer.Option(None, "--revision", "-r", help="Model revision/branch"),
 ):
     """Download a model from HuggingFace."""

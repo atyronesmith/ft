@@ -53,7 +53,11 @@ class ModelManager:
         else:
             # Load from HuggingFace
             model = self.loader.load_from_huggingface(
-                model_id, load_in_4bit=load_in_4bit, load_in_8bit=load_in_8bit, tokenizer=tokenizer, **kwargs
+                model_id,
+                load_in_4bit=load_in_4bit,
+                load_in_8bit=load_in_8bit,
+                tokenizer=tokenizer,
+                **kwargs,
             )
             model_name = model_id
 

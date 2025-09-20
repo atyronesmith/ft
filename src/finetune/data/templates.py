@@ -194,7 +194,7 @@ class TinyLlamaTemplate(PromptTemplate):
         if not for_inference:
             if "output" not in data:
                 raise TemplateError("Missing required field 'output'")
-            prompt += data['output']
+            prompt += data["output"]
 
         return prompt
 

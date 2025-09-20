@@ -28,7 +28,7 @@ class GenerationConfig:
         temperature: float = 0.5,
         top_p: float = 0.95,
         top_k: int = 0,  # 0 means disabled, typical Ollama default is 40
-        repetition_penalty: float = 1.1,  # Ollama default
+        repetition_penalty: float = 1.05,  # Reduced for better chat template compatibility
         stop_on_eos: bool = True,
         stop_on_special_tokens: bool = True,
         verbose: bool = False,
@@ -50,7 +50,7 @@ class GenerationConfig:
             temperature=0.8,  # Ollama default
             top_p=0.9,  # Ollama default
             top_k=40,  # Ollama default
-            repetition_penalty=1.1,  # Ollama default
+            repetition_penalty=1.05,  # Reduced for better chat template compatibility
             verbose=False,
         )
 
@@ -62,7 +62,7 @@ class GenerationConfig:
             temperature=0.8,
             top_p=0.9,
             top_k=40,
-            repetition_penalty=1.1,
+            repetition_penalty=1.05,
             verbose=False,
         )
 
@@ -111,21 +111,22 @@ class MLXTextGenerator:
             logger.debug(message)
 
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
-        """Format text for TinyLlama using a Q&A format that signals answering."""
-        # Use a Q&A format that clearly signals the model should provide an answer
-        # simple_prompt = f"Q: {text}\nA:"
-
-        # Use the default system prompt if none is provided.
-        # if system_prompt is None:
-        system_prompt = "You are a helpful AI assistant."
-
-        # Construct the final prompt string using the exact multi-line format.
-        # It includes the BOS token (<s>), system/user turns, and the final assistant prompt.
-        simple_prompt = (
-          f"<|system|>\n{system_prompt}</s>\n"
-          f"<|user|>\n{text}</s>\n"
-          f"<|assistant|>"
-        )
+        """Format text using TinyLlama's native HuggingFace chat template."""
+        try:
+            # Use HuggingFace's native chat template - this is what the model was trained on
+            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template:
+                messages = [{"role": "user", "content": text}]
+                simple_prompt = self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                self._debug("Using HuggingFace native chat template")
+            else:
+                # Fallback to simple format
+                simple_prompt = f"Q: {text}\nA:"
+                self._debug("Using simple Q&A format")
+        except Exception as e:
+            self._debug(f"Chat template failed: {e}, using simple format")
+            simple_prompt = f"Q: {text}\nA:"
 
         # Encode with BOS token for proper generation
         input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
@@ -142,9 +143,9 @@ class MLXTextGenerator:
 
         # Print exact template to stdout in verbose mode
         if self.config.verbose:
-            print(f"\n=== EXACT TEMPLATE SENT TO MODEL ===")
+            print("\n=== EXACT TEMPLATE SENT TO MODEL ===")
             print(repr(simple_prompt))
-            print(f"=== END TEMPLATE ===\n")
+            print("=== END TEMPLATE ===\n")
 
         return simple_prompt, input_ids
 
@@ -270,18 +271,12 @@ class MLXTextGenerator:
                 count, 3
             )  # Cap at penalty^3 for very frequent tokens
 
-            if float(logits[token_id]) > 0:
-                penalty_logits = mx.where(
-                    mx.arange(logits.shape[0]) == token_id,
-                    logits[token_id] / effective_penalty,
-                    penalty_logits,
-                )
-            else:
-                penalty_logits = mx.where(
-                    mx.arange(logits.shape[0]) == token_id,
-                    logits[token_id] * effective_penalty,
-                    penalty_logits,
-                )
+            # Always penalize repeated tokens by dividing logits (consistent penalty)
+            penalty_logits = mx.where(
+                mx.arange(logits.shape[0]) == token_id,
+                logits[token_id] / effective_penalty,
+                penalty_logits,
+            )
 
         return penalty_logits
 
@@ -291,7 +286,6 @@ class MLXTextGenerator:
             # Format prompt and get input tokens
             formatted_prompt, input_ids = self._format_prompt(prompt)
             input_tensor = mx.array(input_ids).astype(mx.int32).reshape(1, -1)
-            all_token_ids = input_ids.copy()  # Track all tokens for repetition penalty
 
             self._debug(f"Using prompt: {repr(formatted_prompt[:100])}...")
             self._debug(f"Input token count: {len(input_ids)}")
@@ -304,9 +298,9 @@ class MLXTextGenerator:
                 logits = self.model.forward(current_ids)[0]
                 next_logits = logits[0, -1, :]
 
-                # Apply repetition penalty to discourage repeated tokens
+                # Apply repetition penalty ONLY to generated tokens, not template tokens
                 next_logits = self._apply_repetition_penalty(
-                    next_logits, all_token_ids, self.config.repetition_penalty
+                    next_logits, generated_tokens, self.config.repetition_penalty
                 )
 
                 # Mask unwanted tokens
@@ -322,7 +316,6 @@ class MLXTextGenerator:
                     next_logits, self.config.temperature, self.config.top_p, self.config.top_k
                 )
                 generated_tokens.append(next_token_id)
-                all_token_ids.append(next_token_id)  # Add to repetition penalty tracking
 
                 self._debug(
                     f"Step {step}: token_id={next_token_id}, token='{self.tokenizer.decode([next_token_id])}'"
@@ -382,9 +375,7 @@ def create_tokenizer_with_special_tokens(model_id: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
     # Add special tokens if they don't exist
-    special_tokens = {
-        "additional_special_tokens": ["<|system|>", "<|user|>", "<|assistant|>"]
-    }
+    special_tokens = {"additional_special_tokens": ["<|system|>", "<|user|>", "<|assistant|>"]}
 
     # Only add tokens that aren't already in the tokenizer
     new_tokens = []
@@ -414,15 +405,16 @@ def load_model_with_special_tokens(model_id: str):
     try:
         # For MLX models, use flatten_params to properly count parameters
         from finetune.models.mlx_models import flatten_params
+
         flat_params = flatten_params(model.parameters())
-        param_count = sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+        param_count = sum(p.size for p in flat_params.values() if hasattr(p, "size"))
     except Exception:
         # Fallback counting method
-        param_count = getattr(model, 'num_parameters', 0)
+        param_count = getattr(model, "num_parameters", 0)
 
     vocab_size = len(tokenizer)
 
-    logger.info(f"🔍 MODEL DEBUG VALIDATION:")
+    logger.info("🔍 MODEL DEBUG VALIDATION:")
     logger.info(f"   Model parameters: {param_count:,}")
     logger.info(f"   Tokenizer vocab size: {vocab_size}")
     logger.info(f"   Model config vocab size: {model.config.vocab_size}")
@@ -448,31 +440,30 @@ def load_model_with_special_tokens(model_id: str):
 
 def load_model_and_tokenizer(model_id: str):
     """Load model and tokenizer, ensuring they are correctly configured."""
-    from finetune.models.manager import ModelManager
     from transformers import AutoTokenizer
+
+    from finetune.models.manager import ModelManager
 
     # Load the tokenizer directly WITHOUT adding special tokens
     # TinyLlama already has proper chat template support built-in
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-    # 2. Register the special chat tokens with the tokenizer
-    special_tokens_to_add = ["<|system|>", "<|user|>", "<|assistant|>"]
-    tokenizer.add_special_tokens({"additional_special_tokens": special_tokens_to_add})
-    # Load the model using standard tokenizer (no resizing needed)
+    # Load the model using standard tokenizer (no special token modifications)
     manager = ModelManager()
-    model = manager.load_model(model_id, tokenizer=tokenizer)  # Don't pass custom tokenizer
+    model = manager.load_model(model_id, tokenizer=None)  # Use original tokenizer
 
     # DEBUG VALIDATION
     try:
         from finetune.models.mlx_models import flatten_params
+
         flat_params = flatten_params(model.parameters())
-        param_count = sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+        param_count = sum(p.size for p in flat_params.values() if hasattr(p, "size"))
     except Exception:
-        param_count = getattr(model, 'num_parameters', 0)
+        param_count = getattr(model, "num_parameters", 0)
 
     vocab_size = len(tokenizer)
 
-    logger.info(f"🔍 MODEL DEBUG VALIDATION:")
+    logger.info("🔍 MODEL DEBUG VALIDATION:")
     logger.info(f"   Model parameters: {param_count:,}")
     logger.info(f"   Tokenizer vocab size: {vocab_size}")
     logger.info(f"   Model config vocab size: {model.config.vocab_size}")
@@ -482,7 +473,9 @@ def load_model_and_tokenizer(model_id: str):
         raise ValueError("CRITICAL: Model loaded with 0 parameters!")
 
     if vocab_size != model.config.vocab_size:
-        logger.info(f"VOCAB INFO: Using original TinyLlama vocab (tokenizer={vocab_size}, model={model.config.vocab_size})")
+        logger.info(
+            f"VOCAB INFO: Using original TinyLlama vocab (tokenizer={vocab_size}, model={model.config.vocab_size})"
+        )
 
     return model, tokenizer
 

@@ -209,11 +209,8 @@ test-e2e-quick: ## Run quick end-to-end validation (workflow + real model, no Ol
 	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
 	@echo "$(GREEN)✅ Quick end-to-end validation completed!$(NC)"
 
-test-generation: ## Run generation-only test (no training, just model inference)
-	@echo "$(BLUE)Running generation-only test...$(NC)"
-	@echo "$(YELLOW)Testing model generation capabilities with various sampling strategies...$(NC)"
-	PYTHONPATH=src FT_VERBOSE=1 .venv/bin/python -m pytest tests/integration/test_generation_only.py -v --color=yes -s
-	@echo "$(GREEN)✅ Generation test completed!$(NC)"
+# test-generation: Removed - foundational model needs fine-tuning before generation testing
+# Generation quality testing should be done after fine-tuning, not on base models
 
 lint: ## Run linting checks
 	@echo "$(BLUE)Running linters...$(NC)"

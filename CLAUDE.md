@@ -6,7 +6,9 @@ Don't always tell me that I am absolutely correct.  If I am wrong, tell me I am 
 
 ## Project Overview
 
-FineTune is a modular fine-tuning application optimized for Apple Silicon that enables efficient training of language models from HuggingFace on custom datasets.
+FineTune is a modular fine-tuning application optimized for Apple Silicon that enables efficient training of foundational language models from HuggingFace on custom datasets.
+
+**⚠️ Important**: This system works with **foundational/base models** that require fine-tuning before they can perform specific tasks well. Base models will have poor generation quality until fine-tuned - this is expected behavior.
 
 ## Current Implementation Status
 

@@ -269,13 +269,31 @@ def get_lora_trainable_params(model: nn.Module) -> tuple[list[mx.array], int, in
     trainable_count = 0
     total_count = 0
 
-    for name, param in model.named_parameters():
-        total_count += param.size
+    # Use the flatten_params function from MLX models to get flat parameter dict
+    try:
+        from finetune.models.mlx_models import flatten_params
 
-        # Check if this is a LoRA parameter
-        if "lora_" in name or "magnitude" in name:
-            trainable_params.append(param)
-            trainable_count += param.size
+        flat_params = flatten_params(model.parameters())
+
+        for name, param in flat_params.items():
+            # Only count parameters that have a size attribute (actual MLX arrays)
+            if hasattr(param, "size"):
+                total_count += param.size
+
+                # Check if this is a LoRA parameter
+                if "lora_" in name or "magnitude" in name:
+                    trainable_params.append(param)
+                    trainable_count += param.size
+    except ImportError:
+        # Fallback for non-MLX models
+        for name, param in model.named_parameters():
+            if hasattr(param, "size"):
+                total_count += param.size
+
+                # Check if this is a LoRA parameter
+                if "lora_" in name or "magnitude" in name:
+                    trainable_params.append(param)
+                    trainable_count += param.size
 
     return trainable_params, trainable_count, total_count
 

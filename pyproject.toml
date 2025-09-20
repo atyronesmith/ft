@@ -29,6 +29,7 @@ python = "^3.11"
 mlx = {version = "^0.10.0", markers = "sys_platform == 'darwin' and platform_machine == 'arm64'"}
 torch = "^2.1.0"
 transformers = "^4.36.0"
+huggingface_hub = "^0.20.0"
 peft = "^0.7.0"
 datasets = "^2.15.0"
 accelerate = "^0.25.0"
@@ -137,7 +138,7 @@ ignore = [
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports in init files
-"tests/*" = ["S101"]       # use of assert in tests
+"tests/*" = ["S101", "E402"]  # use of assert in tests, imports after path modifications
 
 [tool.mypy]
 python_version = "3.11"

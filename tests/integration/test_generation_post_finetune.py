@@ -1,8 +1,13 @@
 """
-Test for generation-only functionality without training.
+Test for generation quality AFTER fine-tuning.
+
+⚠️  IMPORTANT: This test should only be run on fine-tuned models, not base models.
+Base/foundational models will have poor generation quality until fine-tuned.
 
 This test focuses on validating model generation capabilities
-to isolate generation issues from training complications.
+after completing the fine-tuning process.
+
+Usage: Run this test after fine-tuning to validate generation improvements.
 """
 
 import os
@@ -15,7 +20,12 @@ import pytest
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from finetune.inference.generation import GenerationConfig, generate_text, load_model_and_tokenizer
+# Import after path modification
+from finetune.inference.generation import (  # noqa: E402
+    GenerationConfig,
+    generate_text,
+    load_model_and_tokenizer,
+)
 
 VERBOSE = os.environ.get("FT_VERBOSE", "0") == "1"
 MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"

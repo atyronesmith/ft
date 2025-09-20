@@ -83,6 +83,16 @@ class LoRATrainer:
         self.output_dir = Path(training_config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Calculate total steps for learning rate scheduling
+        if self.train_dataset:
+            if hasattr(self.train_dataset, "__len__"):
+                steps_per_epoch = len(self.train_dataset)
+            else:
+                steps_per_epoch = len(list(self.train_dataset))
+            self.total_steps = steps_per_epoch * self.training_config.num_epochs
+        else:
+            self.total_steps = 1000  # Default fallback
+
         logger.info(
             f"Initialized LoRA trainer with {self.trainable_count:,} trainable parameters "
             f"out of {self.total_count:,} total ({100 * self.trainable_count / self.total_count:.2f}%)"

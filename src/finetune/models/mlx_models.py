@@ -350,12 +350,19 @@ if MLX_AVAILABLE:
             if top_level_params:
                 super().update(top_level_params)
 
-            # Update each layer individually from the nested dictionary
+            # Update each layer individually from the nested dictionary or list
             if layer_params:
-                for i, layer_weights in layer_params.items():
-                    layer_index = int(i)
-                    if layer_index < len(self.layers):
-                        self.layers[layer_index].update(layer_weights)
+                if isinstance(layer_params, dict):
+                    # Normal case: dict mapping layer indices to weights
+                    for i, layer_weights in layer_params.items():
+                        layer_index = int(i)
+                        if layer_index < len(self.layers):
+                            self.layers[layer_index].update(layer_weights)
+                elif isinstance(layer_params, list):
+                    # After LoRA: list of layer weight dicts
+                    for layer_index, layer_weights in enumerate(layer_params):
+                        if layer_index < len(self.layers) and isinstance(layer_weights, dict):
+                            self.layers[layer_index].update(layer_weights)
 
         def parameters(self):
             """Return all parameters for the model, including nested layers."""

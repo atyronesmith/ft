@@ -90,9 +90,9 @@ make test-data         # Data loading tests
 make test-config       # Configuration tests
 make test-e2e-workflow # Workflow integration (mocked)
 
-# Advanced end-to-end testing (requires environment flags)
-FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model  # Real model integration
-FT_E2E_ENABLE=1 make test-e2e-ollama             # Full Ollama pipeline
+# Advanced end-to-end testing
+FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model  # Real model integration (requires flag)
+make test-e2e-mlx                                 # Full MLX pipeline (runs by default)
 
 # Code quality
 make lint             # Run all linters

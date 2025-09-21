@@ -46,33 +46,39 @@ def temp_dir():
 @pytest.fixture
 def sample_model_config():
     """Create a sample model configuration."""
+    from tests.utils import ModelConfigFactory
+    config = ModelConfigFactory.create_sample_config()
+    # Return as dict for backward compatibility
     return {
-        "model_type": "llama",
-        "vocab_size": 32000,
-        "hidden_size": 4096,
-        "num_hidden_layers": 32,
-        "num_attention_heads": 32,
-        "num_key_value_heads": 32,
-        "intermediate_size": 11008,
-        "max_position_embeddings": 2048,
-        "rms_norm_eps": 1e-6,
-        "rope_theta": 10000.0,
-        "tie_word_embeddings": False,
+        "model_type": config.model_type,
+        "vocab_size": config.vocab_size,
+        "hidden_size": config.hidden_size,
+        "num_hidden_layers": config.num_hidden_layers,
+        "num_attention_heads": config.num_attention_heads,
+        "num_key_value_heads": getattr(config, "num_key_value_heads", config.num_attention_heads),
+        "intermediate_size": config.intermediate_size,
+        "max_position_embeddings": config.max_position_embeddings,
+        "rms_norm_eps": getattr(config, "rms_norm_eps", 1e-6),
+        "rope_theta": getattr(config, "rope_theta", 10000.0),
+        "tie_word_embeddings": getattr(config, "tie_word_embeddings", False),
     }
 
 
 @pytest.fixture
 def small_model_config():
     """Create a small model config for testing."""
+    from tests.utils import ModelConfigFactory
+    config = ModelConfigFactory.create_small_config("gpt2")
+    # Return as dict for backward compatibility
     return {
-        "model_type": "gpt2",
-        "vocab_size": 1000,
-        "hidden_size": 128,
-        "num_hidden_layers": 2,
-        "num_attention_heads": 4,
-        "intermediate_size": 512,
-        "max_position_embeddings": 512,
-        "layer_norm_eps": 1e-5,
+        "model_type": config.model_type,
+        "vocab_size": config.vocab_size,
+        "hidden_size": config.hidden_size,
+        "num_hidden_layers": config.num_hidden_layers,
+        "num_attention_heads": config.num_attention_heads,
+        "intermediate_size": config.intermediate_size,
+        "max_position_embeddings": config.max_position_embeddings,
+        "layer_norm_eps": getattr(config, "layer_norm_eps", 1e-5),
     }
 
 
@@ -119,57 +125,22 @@ def mock_mlx_model(temp_dir, sample_model_config):
 @pytest.fixture
 def mock_pytorch_weights():
     """Create mock PyTorch weights."""
-    try:
-        import torch
-
-        return {
-            "model.embed_tokens.weight": torch.randn(1000, 128),
-            "model.layers.0.self_attn.q_proj.weight": torch.randn(128, 128),
-            "model.layers.0.self_attn.k_proj.weight": torch.randn(128, 128),
-            "model.layers.0.self_attn.v_proj.weight": torch.randn(128, 128),
-            "model.layers.0.self_attn.o_proj.weight": torch.randn(128, 128),
-            "model.layers.0.mlp.gate_proj.weight": torch.randn(512, 128),
-            "model.layers.0.mlp.up_proj.weight": torch.randn(512, 128),
-            "model.layers.0.mlp.down_proj.weight": torch.randn(128, 512),
-            "model.norm.weight": torch.ones(128),
-            "lm_head.weight": torch.randn(1000, 128),
-        }
-    except ImportError:
-        # Return numpy arrays if PyTorch not available
-        return {
-            "model.embed_tokens.weight": np.random.randn(1000, 128),
-            "model.layers.0.self_attn.q_proj.weight": np.random.randn(128, 128),
-            "model.layers.0.self_attn.k_proj.weight": np.random.randn(128, 128),
-            "model.layers.0.self_attn.v_proj.weight": np.random.randn(128, 128),
-            "model.layers.0.self_attn.o_proj.weight": np.random.randn(128, 128),
-            "model.layers.0.mlp.gate_proj.weight": np.random.randn(512, 128),
-            "model.layers.0.mlp.up_proj.weight": np.random.randn(512, 128),
-            "model.layers.0.mlp.down_proj.weight": np.random.randn(128, 512),
-            "model.norm.weight": np.ones(128),
-            "lm_head.weight": np.random.randn(1000, 128),
-        }
+    from tests.utils import MockFactory
+    return MockFactory.create_mock_pytorch_weights()
 
 
 @pytest.fixture
 def mock_mlx():
     """Mock MLX module."""
-    mlx = MagicMock()
-    mlx.core = MagicMock()
-    mlx.nn = MagicMock()
-    mlx.core.array = lambda x: MagicMock(shape=getattr(x, "shape", (1,)))
-    return mlx
+    from tests.utils import MockFactory
+    return MockFactory.create_mock_mlx()
 
 
 @pytest.fixture
 def mock_torch():
     """Mock PyTorch module."""
-    torch = MagicMock()
-    torch.float16 = "float16"
-    torch.float32 = "float32"
-    torch.cuda.is_available.return_value = False
-    torch.backends.mps.is_available.return_value = True
-    torch.device.return_value = "mps"
-    return torch
+    from tests.utils import MockFactory
+    return MockFactory.create_mock_torch()
 
 
 # Skip markers for optional dependencies
@@ -183,32 +154,20 @@ def pytest_configure(config):
 
 def mlx_available():
     """Check if MLX is available."""
-    try:
-        import mlx
-
-        return True
-    except ImportError:
-        return False
+    from tests.utils import TestEnvironment
+    return TestEnvironment.mlx_available()
 
 
 def torch_available():
     """Check if PyTorch is available."""
-    try:
-        import torch
-
-        return True
-    except ImportError:
-        return False
+    from tests.utils import TestEnvironment
+    return TestEnvironment.torch_available()
 
 
 def transformers_available():
     """Check if Transformers is available."""
-    try:
-        import transformers
-
-        return True
-    except ImportError:
-        return False
+    from tests.utils import TestEnvironment
+    return TestEnvironment.transformers_available()
 
 
 # Auto-skip tests based on requirements

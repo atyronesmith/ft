@@ -89,8 +89,16 @@ def test_generation_only():
 
         for i, (question, expected) in enumerate(test_cases, 1):
             try:
-                # Clear cache between generations for consistency
-                mx.eval(model.parameters())
+                # Clear cache between generations for consistency (avoid hanging)
+                if hasattr(model, 'get_lora_params'):
+                    trainable_params, _, _ = model.get_lora_params()
+                    mx.eval(trainable_params)
+                else:
+                    # Fallback: evaluate just one parameter
+                    params = model.parameters()
+                    if isinstance(params, dict) and params:
+                        first_param = next(iter(params.values()))
+                        mx.eval(first_param)
                 if hasattr(mx, "clear_cache"):
                     mx.clear_cache()
 
@@ -153,8 +161,16 @@ def test_single_question_detailed():
 
     _vprint("\n🎯 Testing with pure greedy decoding (temp=0.0):")
 
-    # Clear cache for clean state
-    mx.eval(model.parameters())
+    # Clear cache for clean state (avoid hanging)
+    if hasattr(model, 'get_lora_params'):
+        trainable_params, _, _ = model.get_lora_params()
+        mx.eval(trainable_params)
+    else:
+        # Fallback: evaluate just one parameter
+        params = model.parameters()
+        if isinstance(params, dict) and params:
+            first_param = next(iter(params.values()))
+            mx.eval(first_param)
     if hasattr(mx, "clear_cache"):
         mx.clear_cache()
 

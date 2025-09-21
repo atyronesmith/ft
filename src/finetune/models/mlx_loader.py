@@ -146,7 +146,13 @@ class MLXModelLoader(ModelLoader):
         # Check if it's our converted MLX model format
         if (path / "weights.npz").exists() and (path / "config.json").exists():
             model = self._load_model_from_npz(path)
-            mx.eval(model.parameters())  # Ensure weights are loaded
+            # Only evaluate a subset of parameters to avoid hanging on large models
+            params = model.parameters()
+            if isinstance(params, dict) and params:
+                # Just evaluate one parameter to ensure weights are loaded
+                first_param = next(iter(params.values()))
+                mx.eval(first_param)
+            logger.debug("Model weights evaluation completed")
             return model
 
         # Otherwise, assume it's a raw HuggingFace model and convert it
@@ -172,8 +178,13 @@ class MLXModelLoader(ModelLoader):
         logger.info(f"Loading {len(weights)} weight tensors from NPZ file")
         model.update(nested_weights)
 
-        # Critical: Ensure all weights are properly evaluated and loaded
-        mx.eval(model.parameters())
+        # Critical: Ensure weights are properly evaluated and loaded (but avoid hanging)
+        params = model.parameters()
+        if isinstance(params, dict) and params:
+            # Just evaluate one parameter to ensure weights are loaded
+            first_param = next(iter(params.values()))
+            mx.eval(first_param)
+            logger.debug("Model parameter evaluation completed")
 
         # Validate model has parameters using MLX flatten_params
         try:

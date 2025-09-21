@@ -5,17 +5,8 @@ Unit tests for MLX model implementations.
 from unittest.mock import patch
 
 import pytest
-from finetune.models.base import ModelConfig
 
-
-def _mlx_available():
-    """Check if MLX is available."""
-    try:
-        import mlx
-
-        return True
-    except ImportError:
-        return False
+from tests.utils import ModelConfigFactory, TestEnvironment
 
 
 class TestMLXModels:
@@ -24,15 +15,8 @@ class TestMLXModels:
     @pytest.fixture
     def small_config(self):
         """Create a small config for testing."""
-        return ModelConfig(
-            model_type="llama",
-            vocab_size=100,
-            hidden_size=64,
-            num_hidden_layers=2,
-            num_attention_heads=4,
-            intermediate_size=256,
-            max_position_embeddings=128,
-            rms_norm_eps=1e-6,
+        return ModelConfigFactory.create_small_config(
+            model_type="llama"
         )
 
     @pytest.mark.requires_mlx
@@ -269,22 +253,14 @@ class TestMLXModelsWithoutMLX:
 
             assert not mlx_models.MLX_AVAILABLE
 
-    @pytest.mark.skipif(_mlx_available(), reason="Skip when MLX is available")
+    @pytest.mark.skipif(TestEnvironment.mlx_available(), reason="Skip when MLX is available")
     def test_model_creation_fails_without_mlx(self):
         """Test that model creation fails gracefully without MLX."""
         # This test only makes sense when MLX is not installed
         # When MLX is installed, the else branch is never executed
         from finetune.models.mlx_models import get_mlx_model
 
-        config = ModelConfig(
-            model_type="llama",
-            vocab_size=100,
-            hidden_size=64,
-            num_hidden_layers=2,
-            num_attention_heads=4,
-            intermediate_size=256,
-            max_position_embeddings=128,
-        )
+        config = ModelConfigFactory.create_small_config(model_type="llama")
 
         # Should raise ImportError when MLX not available
         with pytest.raises(ImportError, match="MLX is not available"):

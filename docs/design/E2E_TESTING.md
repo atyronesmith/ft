@@ -72,25 +72,25 @@ FT_REAL_MODEL_ENABLE=1 FT_TEST_MODEL=gpt2 make test-e2e-real-model
 4. **Parameter Updates**: >80% of LoRA parameters change during training
 5. **Artifact Generation**: Training produces output files and checkpoints
 
-### Tier 3: Full Deployment (`test_end_to_end_ollama.py`)
+### Tier 3: Full MLX Pipeline (`test_end_to_end_mlx.py`)
 **Purpose**: Complete production pipeline validation
 **Target**: Release validation and deployment verification
 **Dependencies**: Ollama CLI, network access, conversion toolchain
 
 #### Features:
-- **Complete Pipeline**: HuggingFace → LoRA fine-tuning → Ollama → evaluation
-- **Environment-Gated**: Uses `FT_E2E_ENABLE=1` for optional execution
+- **Complete Pipeline**: HuggingFace → LoRA fine-tuning → MLX generation → evaluation
+- **Always Enabled**: Runs by default without environment flags
 - **Robust Error Handling**: Graceful degradation when external tools unavailable
-- **Real CLI Testing**: Uses actual CLI commands via subprocess
+- **Direct MLX Testing**: Uses MLX generation directly without external tools
 - **Comprehensive Reporting**: JSON artifacts with evaluation results
 
 #### Usage:
 ```bash
-# Enable full Ollama testing
-FT_E2E_ENABLE=1 make test-e2e-ollama
+# Run MLX end-to-end testing
+make test-e2e-mlx
 
 # Use custom model
-FT_E2E_ENABLE=1 FT_E2E_MODEL_ID=TinyLlama/TinyLlama-1.1B-Chat-v1.0 make test-e2e-ollama
+FT_E2E_MODEL_ID=TinyLlama/TinyLlama-1.1B-Chat-v1.0 make test-e2e-mlx
 ```
 
 #### Pipeline Steps:
@@ -121,7 +121,7 @@ make test-e2e-all           # All three tiers (comprehensive validation)
 ```bash
 # Automatic environment flag passing
 FT_REAL_MODEL_ENABLE=1 make test-e2e-real-model
-FT_E2E_ENABLE=1 make test-e2e-ollama
+make test-e2e-mlx  # Runs by default, no flags needed
 
 # Batch execution with flags
 make test-e2e-all  # Automatically enables required flags

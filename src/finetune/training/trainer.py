@@ -227,11 +227,23 @@ class LoRATrainer:
     def training_step(self, batch: dict[str, mx.array]) -> dict[str, float]:
         """Perform a single training step."""
 
-        # Compute loss and gradients (MLX: use mx.value_and_grad with (model, batch))
-        def loss_fn(model: BaseModel, batch_: dict[str, mx.array]) -> mx.array:
-            return self.compute_loss(model, batch_)
+        # Use a much simpler approach - compute gradients for the entire model
+        # but only update LoRA parameters
+        def loss_fn(model):
+            return self.compute_loss(model, batch)
 
-        loss, grads = mx.value_and_grad(loss_fn)(self.model, batch)
+        # Get the model's trainable parameters (LoRA only)
+        def is_lora_param(path: str) -> bool:
+            return 'lora_a' in path or 'lora_b' in path
+
+        # Compute gradients for the full model
+        loss, all_grads = mx.value_and_grad(loss_fn)(self.model)
+
+        # Filter to only LoRA gradients
+        lora_grads = {}
+        for path, grad in all_grads.items():
+            if is_lora_param(path):
+                lora_grads[path] = grad
 
         # Check for NaN/Inf in loss and gradients before proceeding
         if mx.isnan(loss) or mx.isinf(loss):
@@ -249,27 +261,30 @@ class LoRATrainer:
                 if mx.any(mx.isnan(g)) or mx.any(mx.isinf(g)):
                     raise ValueError(f"Gradient NaN/Inf detected at {path}")
 
-        check_grads_valid(grads, "grads")
+        check_grads_valid(lora_grads, "lora_grads")
 
-        # Clip gradients (manual global-norm clipping, MLX has no clip_grad_norm)
+        # Calculate gradient norm (needed for metrics and optional clipping)
+        def global_norm(g) -> float:
+            total = 0.0
+
+            def accumulate(x):
+                nonlocal total
+                if isinstance(x, dict):
+                    for v in x.values():
+                        accumulate(v)
+                elif isinstance(x, list):
+                    for v in x:
+                        accumulate(v)
+                elif hasattr(x, "shape"):
+                    total += float(mx.sum(x * x))
+
+            accumulate(g)
+            return math.sqrt(total) if total > 0.0 else 0.0
+
+        grad_norm = global_norm(lora_grads)
+
+        # Clip gradients if enabled
         if self.training_config.max_grad_norm > 0:
-
-            def global_norm(g) -> float:
-                total = 0.0
-
-                def accumulate(x):
-                    nonlocal total
-                    if isinstance(x, dict):
-                        for v in x.values():
-                            accumulate(v)
-                    elif isinstance(x, list):
-                        for v in x:
-                            accumulate(v)
-                    elif hasattr(x, "shape"):
-                        total += float(mx.sum(x * x))
-
-                accumulate(g)
-                return math.sqrt(total) if total > 0.0 else 0.0
 
             def scale_tree(x, s):
                 if isinstance(x, dict):
@@ -280,7 +295,7 @@ class LoRATrainer:
                     return x * s
                 return x
 
-            gn = global_norm(grads)
+            gn = grad_norm  # Use the already calculated gradient norm
             # Log gradient norm for monitoring training stability
             if self.global_step % self.training_config.logging_steps == 0:
                 if gn <= self.training_config.max_grad_norm:
@@ -294,7 +309,7 @@ class LoRATrainer:
 
             if gn > self.training_config.max_grad_norm:
                 scale = self.training_config.max_grad_norm / (gn + 1e-6)
-                grads = scale_tree(grads, scale)
+                lora_grads = scale_tree(lora_grads, scale)
                 # Log clipping events less frequently to reduce noise
                 if self.global_step % (self.training_config.logging_steps * 5) == 0:
                     logger.info(
@@ -304,14 +319,15 @@ class LoRATrainer:
                 if self.global_step % self.training_config.logging_steps == 0:
                     logger.warning(f"Step {self.global_step}: Elevated gradient norm: {gn:.4f}")
 
-        # Update parameters
-        self.optimizer.update(self.model, grads)
+        # Use standard MLX optimizer update with filtered LoRA gradients
+        self.optimizer.update(self.model, lora_grads)
 
         # Update learning rate using the scheduler (crucial for preventing gradient explosions)
         lr = self._get_learning_rate()
         self.optimizer.learning_rate = lr
 
-        mx.eval(self.model.parameters())
+        # Only evaluate trainable parameters to avoid hanging on full 1.1B parameter evaluation
+        mx.eval(self.trainable_params)
 
         # Validate parameters after update to catch corruption early
         def check_params_valid(params, path=""):
@@ -330,7 +346,7 @@ class LoRATrainer:
 
         check_params_valid(self.model.parameters(), "model")
 
-        return {"loss": float(loss), "learning_rate": lr}
+        return {"loss": float(loss), "learning_rate": lr, "grad_norm": grad_norm}
 
     def evaluate(self) -> dict[str, float]:
         """Evaluate the model."""
@@ -381,6 +397,47 @@ class LoRATrainer:
         )
 
         logger.info(f"Saved checkpoint to {checkpoint_dir}")
+
+    def cleanup_old_training_runs(self, max_runs: int = 3):
+        """Clean up old training runs, keeping only the most recent ones."""
+        import shutil
+        from datetime import datetime
+
+        if not self.output_dir.exists():
+            return
+
+        # Find all final_model directories in parent directory
+        parent_dir = self.output_dir.parent
+        if not parent_dir.exists():
+            return
+
+        # Look for directories that contain final_model subdirectories
+        training_runs = []
+        for item in parent_dir.iterdir():
+            if item.is_dir():
+                final_model_path = item / "final_model"
+                if final_model_path.exists() and (final_model_path / "lora_weights.npz").exists():
+                    # Get modification time of the final_model directory
+                    mtime = final_model_path.stat().st_mtime
+                    training_runs.append((mtime, item))
+
+        # Sort by modification time (newest first)
+        training_runs.sort(key=lambda x: x[0], reverse=True)
+
+        # Keep only the most recent max_runs
+        if len(training_runs) > max_runs:
+            runs_to_remove = training_runs[max_runs:]
+            logger.info(f"Cleaning up {len(runs_to_remove)} old training runs (keeping {max_runs} most recent)")
+
+            for mtime, run_dir in runs_to_remove:
+                try:
+                    timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"Removing old training run: {run_dir.name} (from {timestamp})")
+                    shutil.rmtree(run_dir)
+                except Exception as e:
+                    logger.warning(f"Failed to remove {run_dir}: {e}")
+        else:
+            logger.info(f"Found {len(training_runs)} training runs, no cleanup needed (max: {max_runs})")
 
     def load_checkpoint(self, checkpoint_dir: Path):
         """Load a training checkpoint."""
@@ -441,6 +498,7 @@ class LoRATrainer:
 
         try:
             for epoch in range(self.training_config.num_epochs):
+                logger.info(f"🔄 Starting epoch {epoch + 1}/{self.training_config.num_epochs}")
                 if interrupted:
                     logger.info(f"Training stopped at epoch {epoch + 1} due to user interrupt")
                     break
@@ -450,6 +508,7 @@ class LoRATrainer:
                 num_batches = 0
 
                 start_time = time.time()
+                logger.info(f"📊 Epoch {epoch + 1}: Starting batch iteration over {len(self.train_dataset)} batches")
 
                 for _batch_idx, batch in enumerate(self.train_dataset):
                     if interrupted:
@@ -459,10 +518,32 @@ class LoRATrainer:
                         break
 
                     # Training step
-                    metrics = self.training_step(batch)
+                    try:
+                        metrics = self.training_step(batch)
+                    except Exception as e:
+                        logger.error(f"Training step failed at batch {_batch_idx + 1}: {e}")
+                        logger.error(f"Exception type: {type(e).__name__}")
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
                     epoch_loss += metrics["loss"]
                     num_batches += 1
                     self.global_step += 1
+
+                    # Calculate timing metrics
+                    elapsed = time.time() - start_time
+                    steps_per_sec = num_batches / elapsed if elapsed > 0 else 0
+                    avg_loss = epoch_loss / num_batches
+
+                    logger.info(
+                        f"✅ Epoch {epoch + 1}/{self.training_config.num_epochs} | "
+                        f"Step {self.global_step}/{self.total_steps} | "
+                        f"loss={metrics['loss']:.4f} | "
+                        f"avg_loss={avg_loss:.4f} | "
+                        f"lr={metrics['learning_rate']:.2e} | "
+                        f"grad_norm={metrics['grad_norm']:.4f} | "
+                        f"steps/s={steps_per_sec:.2f}"
+                    )
 
                     # Verbose progress logging for each batch step
                     import os
@@ -527,6 +608,10 @@ class LoRATrainer:
 
             # Final save (even if interrupted)
             self.save_checkpoint(self.output_dir / "final_model")
+
+            # Clean up old training runs (keep only 3 most recent)
+            self.cleanup_old_training_runs(max_runs=3)
+
             if interrupted:
                 logger.info("Training interrupted but checkpoint saved.")
             else:

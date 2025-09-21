@@ -1,0 +1,34 @@
+{
+  "total_questions": 3,
+  "correct": 0,
+  "partial": 0,
+  "incorrect": 3,
+  "accuracy_percent": 0.0,
+  "partial_percent": 0.0,
+  "sample_results": [
+    {
+      "question": "What is the capital of Afghanistan?",
+      "expected": "Kabul",
+      "generated": "<|system|user| \nI's the author:",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    },
+    {
+      "question": "What is the capital of Albania?",
+      "expected": "Tirana",
+      "generated": "<|system|user| \nI's the author: \"The capital of the capital",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    },
+    {
+      "question": "What is the capital of Algeria?",
+      "expected": "Algiers",
+      "generated": "- \n  - \n  -  - \n<|assistant, the",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    }
+  ]
+}

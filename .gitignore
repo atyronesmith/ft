@@ -221,3 +221,6 @@ passwords.yml
 
 # Claude local settings (keep this)
 # .claude/
+
+# Training outputs and model files
+/training/

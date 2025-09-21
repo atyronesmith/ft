@@ -325,7 +325,14 @@ if MLX_AVAILABLE:
         @property
         def num_parameters(self) -> int:
             """Get total number of parameters."""
-            return sum(v.size for v in self.parameters().values() if hasattr(v, "size"))
+            try:
+                # Use the same method as the loader for consistency
+                flat_params = flatten_params(self.parameters())
+                return sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+            except Exception:
+                # Fallback to simple count if flattening fails
+                params = self.parameters()
+                return sum(v.size for v in params.values() if hasattr(v, "size"))
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""
@@ -565,23 +572,29 @@ if MLX_AVAILABLE:
         @property
         def num_parameters(self) -> int:
             """Get total number of parameters."""
-            total = 0
+            try:
+                # Use the same method as the loader for consistency
+                flat_params = flatten_params(self.parameters())
+                return sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+            except Exception:
+                # Fallback to recursive count if flattening fails
+                total = 0
 
-            def count_params(params):
-                nonlocal total
-                for k, v in params.items():
-                    if isinstance(v, dict):
-                        count_params(v)
-                    elif isinstance(v, list):
-                        # Handle lists of modules (like layers)
-                        for item in v:
-                            if hasattr(item, "parameters"):
-                                count_params(dict(item.parameters()))
-                    elif hasattr(v, "size"):
-                        total += v.size
+                def count_params(params):
+                    nonlocal total
+                    for k, v in params.items():
+                        if isinstance(v, dict):
+                            count_params(v)
+                        elif isinstance(v, list):
+                            # Handle lists of modules (like layers)
+                            for item in v:
+                                if hasattr(item, "parameters"):
+                                    count_params(dict(item.parameters()))
+                        elif hasattr(v, "size"):
+                            total += v.size
 
-            count_params(dict(self.parameters()))
-            return total
+                count_params(dict(self.parameters()))
+                return total
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""

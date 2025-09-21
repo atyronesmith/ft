@@ -114,6 +114,84 @@ all = ["streamlit", "wandb", "plotly", "hydra-core", "omegaconf", "alembic", "bi
 ft = "finetune.cli.app:main"
 finetune = "finetune.cli.app:main"
 
+# Modern pip-compatible project configuration (for cross-machine compatibility)
+[project]
+name = "finetune"
+version = "0.1.0"
+description = "Generic fine-tuning application optimized for Apple Silicon"
+authors = [{name = "FineTune Team", email = "finetune@example.com"}]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+keywords = ["machine-learning", "fine-tuning", "llm", "mlx", "apple-silicon"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core dependencies (same as Poetry)
+dependencies = [
+    "mlx>=0.10.0; sys_platform=='darwin' and platform_machine=='arm64'",
+    "torch>=2.1.0",
+    "transformers>=4.36.0",
+    "huggingface_hub>=0.20.0",
+    "peft>=0.7.0",
+    "datasets>=2.15.0",
+    "accelerate>=0.25.0",
+    "tokenizers>=0.15.0",
+    "sentencepiece>=0.1.99",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    "websockets>=12.0.0",
+    "aiofiles>=23.2.0",
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "questionary>=2.0.0",
+    "pyyaml>=6.0",
+    "loguru>=0.7.0",
+    "click>=8.1.0",
+]
+
+# Optional dependencies (converted from Poetry groups)
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "hypothesis>=6.92.0",
+    "ruff>=0.1.0",
+    "black>=23.12.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
+    "ipykernel>=6.27.0",
+    "notebook>=7.0.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+    "pdoc>=14.1.0",
+]
+ui = ["streamlit"]
+monitoring = ["wandb", "plotly"]
+config = ["hydra-core", "omegaconf"]
+db = ["alembic"]
+quantization = ["bitsandbytes>=0.41.0"]
+all = ["streamlit", "wandb", "plotly", "hydra-core", "omegaconf", "alembic", "bitsandbytes"]
+
+[project.scripts]
+ft = "finetune.cli.app:main"
+finetune = "finetune.cli.app:main"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

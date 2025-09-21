@@ -9,21 +9,24 @@ YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m # No Color
 
-# Check if poetry is installed
-POETRY := $(shell command -v poetry 2> /dev/null)
+# Check if poetry is installed - try multiple common locations
+POETRY := $(shell command -v poetry 2> /dev/null || echo $(shell which poetry 2> /dev/null) || echo $(shell ls /usr/local/bin/poetry 2> /dev/null) || echo $(shell ls ~/.local/bin/poetry 2> /dev/null) || echo "")
 
 help: ## Show this help message
 	@echo "$(BLUE)FineTune Development Commands$(NC)"
 	@echo ""
-	@echo "$(BLUE)🚀 Quick Start:$(NC) make dev && make test-week2-quick"
+	@echo "$(BLUE)🚀 Quick Start:$(NC)"
+	@echo "  Primary machine: make dev && make test-week2-quick"
+	@echo "  Mounted repos:   make dev-pip && make test-week2-quick"
+	@echo ""
 	@echo "$(BLUE)📋 Common:$(NC) make test-week2 | make test-lora | make test-e2e-quick | make format"
 	@echo ""
 	@echo "$(YELLOW)📦 Environment & Setup$(NC)"
-	@grep -E '^(poetry-check|install|dev|install-all|update|lock|shell|init|create-dirs):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(poetry-check|install|dev|dev-pip|recreate-venv|install-all|update|lock|shell|init|create-dirs):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🧪 Testing$(NC)"
-	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-mlx|test-e2e-all|test-e2e-quick|test-generation):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(test|test-unit|test-base|test-integration|test-lora|test-lora-quick|test-data|test-templates|test-config|test-week2|test-week2-quick|test-e2e-workflow|test-e2e-real-model|test-e2e-mlx|test-e2e-mlx-short|test-e2e-mlx-medium|test-e2e-mlx-long|test-e2e-all|test-e2e-quick|test-generation|test-generation-quick):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🔍 Code Quality$(NC)"
@@ -43,7 +46,7 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🛠️  Utilities$(NC)"
-	@grep -E '^(clean|setup-mlx|benchmark|update-deps|completion|completion-install):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(clean|clean-training|setup-mlx|benchmark|update-deps|completion|completion-install):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)ℹ️  Help$(NC)"
@@ -51,44 +54,160 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 
 poetry-check: ## Check if Poetry is installed
-ifndef POETRY
-	@echo "$(RED)Poetry is not installed. Installing Poetry...$(NC)"
-	@curl -sSL https://install.python-poetry.org | python3 -
-	@echo "$(YELLOW)Please add Poetry to your PATH and run make again$(NC)"
-	@exit 1
-else
-	@echo "$(GREEN)Poetry is installed at: $(POETRY)$(NC)"
-endif
+	@if [ -z "$(POETRY)" ]; then \
+		echo "$(RED)Poetry is not installed. Installing Poetry...$(NC)"; \
+		curl -sSL https://install.python-poetry.org | python3 -; \
+		echo "$(YELLOW)Poetry installed. Checking for Poetry in common locations...$(NC)"; \
+		if [ -f "$$HOME/.local/bin/poetry" ]; then \
+			echo "$(GREEN)Found Poetry at: $$HOME/.local/bin/poetry$(NC)"; \
+			echo "$(YELLOW)Adding $$HOME/.local/bin to PATH for this session$(NC)"; \
+			export PATH="$$HOME/.local/bin:$$PATH"; \
+		elif [ -f "/usr/local/bin/poetry" ]; then \
+			echo "$(GREEN)Found Poetry at: /usr/local/bin/poetry$(NC)"; \
+		else \
+			echo "$(RED)Poetry installation completed but poetry command not found$(NC)"; \
+			echo "$(YELLOW)Please add Poetry to your PATH manually:$(NC)"; \
+			echo "  export PATH=\"$$HOME/.local/bin:$$PATH\""; \
+			exit 1; \
+		fi; \
+	else \
+		echo "$(GREEN)Poetry is installed at: $(POETRY)$(NC)"; \
+		echo "$(YELLOW)Testing Poetry installation...$(NC)"; \
+		if ! $(POETRY) --version >/dev/null 2>&1; then \
+			echo "$(RED)Poetry found but not working (possibly from different machine/Python version)$(NC)"; \
+			echo "$(YELLOW)This often happens with mounted repos across different machines.$(NC)"; \
+			echo "$(YELLOW)Solutions:$(NC)"; \
+			echo "  1. Reinstall Poetry on this machine: curl -sSL https://install.python-poetry.org | python3 -"; \
+			echo "  2. Or use pip in a venv: python3 -m venv .venv && source .venv/bin/activate && pip install poetry"; \
+			echo "  3. Or manually install dependencies: python3 -m venv .venv && source .venv/bin/activate && pip install -e ."; \
+			exit 1; \
+		fi; \
+	fi
 
 install: poetry-check ## Install the package in production mode
 	@echo "$(BLUE)Installing FineTune with Poetry...$(NC)"
-	poetry install --without dev,docs
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) install --without dev,docs; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry install --without dev,docs; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry install --without dev,docs; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Installation complete!$(NC)"
 
 dev: poetry-check ## Install the package in development mode with all dependencies
 	@echo "$(BLUE)Setting up development environment with Poetry...$(NC)"
-	poetry install --with dev,docs
-	poetry run pre-commit install
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) install --with dev,docs; \
+		$(POETRY) run pre-commit install; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry install --with dev,docs; \
+		/usr/local/bin/poetry run pre-commit install; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry install --with dev,docs; \
+		$$HOME/.local/bin/poetry run pre-commit install; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Development setup complete!$(NC)"
+
+dev-pip: ## Setup development environment using pip (for cross-machine scenarios)
+	@echo "$(BLUE)Setting up development environment with pip...$(NC)"
+	@echo "$(YELLOW)This is useful when Poetry has cross-machine issues$(NC)"
+	@if [ ! -d ".venv" ]; then \
+		echo "$(YELLOW)Creating virtual environment...$(NC)"; \
+		python3 -m venv .venv; \
+	fi
+	@echo "$(YELLOW)Activating virtual environment and installing dependencies...$(NC)"
+	@.venv/bin/python -m pip install --upgrade pip setuptools wheel
+	@.venv/bin/python -m pip install -e ".[dev,docs]"
+	@if [ -f ".git/hooks/pre-commit" ]; then \
+		echo "$(YELLOW)Pre-commit already installed$(NC)"; \
+	else \
+		echo "$(YELLOW)Installing pre-commit hooks...$(NC)"; \
+		.venv/bin/pre-commit install || echo "$(YELLOW)Pre-commit install failed, but continuing...$(NC)"; \
+	fi
+	@echo "$(GREEN)Development setup complete with pip!$(NC)"
+	@echo "$(YELLOW)To activate: source .venv/bin/activate$(NC)"
+
+recreate-venv: ## Recreate venv with Poetry (for cross-machine setup)
+	@echo "$(BLUE)Recreating virtual environment with Poetry...$(NC)"
+	@echo "$(YELLOW)This will delete existing .venv and create a fresh one$(NC)"
+	@if [ -d ".venv" ]; then \
+		echo "$(YELLOW)Removing existing .venv...$(NC)"; \
+		rm -rf .venv; \
+	fi
+	@echo "$(YELLOW)Creating new virtual environment...$(NC)"
+	@python3 -m venv .venv
+	@echo "$(YELLOW)Installing Poetry in venv...$(NC)"
+	@.venv/bin/python -m pip install --upgrade pip setuptools wheel
+	@.venv/bin/python -m pip install poetry
+	@echo "$(YELLOW)Installing project dependencies with Poetry...$(NC)"
+	@.venv/bin/poetry install --with dev,docs
+	@echo "$(YELLOW)Installing pre-commit hooks...$(NC)"
+	@.venv/bin/poetry run pre-commit install || echo "$(YELLOW)Pre-commit install failed, but continuing...$(NC)"
+	@echo "$(GREEN)Virtual environment recreated successfully!$(NC)"
+	@echo "$(YELLOW)To activate: source .venv/bin/activate$(NC)"
+	@echo "$(YELLOW)Poetry is now available in venv: .venv/bin/poetry$(NC)"
 
 install-all: poetry-check ## Install with all optional dependencies
 	@echo "$(BLUE)Installing all dependencies...$(NC)"
-	poetry install --with dev,docs --all-extras
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) install --with dev,docs --all-extras; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry install --with dev,docs --all-extras; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry install --with dev,docs --all-extras; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Full installation complete!$(NC)"
 
 update: poetry-check ## Update all dependencies
 	@echo "$(BLUE)Updating dependencies...$(NC)"
-	poetry update
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) update; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry update; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry update; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Dependencies updated!$(NC)"
 
 lock: poetry-check ## Update poetry.lock file
 	@echo "$(BLUE)Updating lock file...$(NC)"
-	poetry lock --no-update
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) lock --no-update; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry lock --no-update; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry lock --no-update; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Lock file updated!$(NC)"
 
 shell: poetry-check ## Enter Poetry shell
 	@echo "$(BLUE)Entering Poetry shell...$(NC)"
-	poetry shell
+	@if [ -n "$(POETRY)" ]; then \
+		$(POETRY) shell; \
+	elif [ -f "/usr/local/bin/poetry" ]; then \
+		/usr/local/bin/poetry shell; \
+	elif [ -f "$$HOME/.local/bin/poetry" ]; then \
+		$$HOME/.local/bin/poetry shell; \
+	else \
+		echo "$(RED)Poetry not found! Please install Poetry first.$(NC)"; \
+		exit 1; \
+	fi
 
 test: ## Run all tests with coverage
 	@echo "$(BLUE)Running tests...$(NC)"
@@ -175,19 +294,26 @@ test-e2e-real-model: ## Run real model integration test (requires FT_REAL_MODEL_
 	fi
 	@echo "$(GREEN)✅ Real model integration test completed!$(NC)"
 
-test-e2e-mlx: ## Run end-to-end MLX test (requires FT_E2E_ENABLE=1)
+test-e2e-mlx: ## Run end-to-end MLX test
 	@echo "$(BLUE)Running MLX end-to-end test...$(NC)"
 	@echo "$(YELLOW)Testing complete pipeline: model → fine-tune → MLX generation → evaluation...$(NC)"
-	@if [ "$(FT_E2E_ENABLE)" = "1" ]; then \
-		echo "$(GREEN)MLX E2E testing enabled$(NC)"; \
-		OPTS="-v --color=yes"; \
-		if [ "$(FT_E2E_VERBOSE)" = "1" ]; then OPTS="$$OPTS -s"; fi; \
-		PYTHONPATH=src FT_E2E_ENABLE=1 FT_E2E_VERBOSE=$(FT_E2E_VERBOSE) .venv/bin/python -m pytest tests/integration/test_end_to_end_ollama.py $$OPTS; \
-	else \
-		echo "$(YELLOW)MLX E2E testing disabled. Set FT_E2E_ENABLE=1 to enable.$(NC)"; \
-		echo "$(YELLOW)Usage: FT_E2E_ENABLE=1 make test-e2e-mlx$(NC)"; \
-	fi
+	@echo "$(YELLOW)Training duration: $(FT_E2E_TRAINING) (short=2min, medium=8min, long=15min)$(NC)"
+	@echo "$(GREEN)Running MLX E2E test$(NC)"
+	@OPTS="-v --color=yes -s"; \
+	source .venv/bin/activate && PYTHONPATH=src FT_E2E_VERBOSE=$(FT_E2E_VERBOSE) FT_E2E_TRAINING=$(FT_E2E_TRAINING) python -m pytest tests/integration/test_end_to_end_mlx.py $$OPTS
 	@echo "$(GREEN)✅ MLX end-to-end test completed!$(NC)"
+
+test-e2e-mlx-short: ## Run short MLX test (30 examples, 2 epochs, ~2 minutes)
+	@echo "$(BLUE)Running short MLX end-to-end test...$(NC)"
+	@FT_E2E_TRAINING=short $(MAKE) test-e2e-mlx
+
+test-e2e-mlx-medium: ## Run medium MLX test (100 examples, 3 epochs, ~8 minutes)
+	@echo "$(BLUE)Running medium MLX end-to-end test...$(NC)"
+	@FT_E2E_TRAINING=medium $(MAKE) test-e2e-mlx
+
+test-e2e-mlx-long: ## Run long MLX test (100 examples, 5 epochs, ~15 minutes)
+	@echo "$(BLUE)Running long MLX end-to-end test...$(NC)"
+	@FT_E2E_TRAINING=long $(MAKE) test-e2e-mlx
 
 test-e2e-all: ## Run all end-to-end tests (workflow + real model + MLX)
 	@echo "$(BLUE)Running all end-to-end integration tests...$(NC)"
@@ -198,7 +324,7 @@ test-e2e-all: ## Run all end-to-end tests (workflow + real model + MLX)
 	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
 	@echo ""
 	@echo "$(YELLOW)3/3: MLX end-to-end (slow)...$(NC)"
-	@FT_E2E_ENABLE=1 $(MAKE) test-e2e-mlx
+	@$(MAKE) test-e2e-mlx
 	@echo ""
 	@echo "$(GREEN)🎉 All end-to-end tests completed successfully!$(NC)"
 
@@ -209,8 +335,43 @@ test-e2e-quick: ## Run quick end-to-end validation (workflow + real model, no Ol
 	@FT_REAL_MODEL_ENABLE=1 $(MAKE) test-e2e-real-model
 	@echo "$(GREEN)✅ Quick end-to-end validation completed!$(NC)"
 
-# test-generation: Removed - foundational model needs fine-tuning before generation testing
-# Generation quality testing should be done after fine-tuning, not on base models
+test-generation: ## Test latest trained model on 100 capital questions
+	@echo "$(BLUE)Testing latest trained model generation...$(NC)"
+	@echo "$(YELLOW)Finding most recent training run and testing on 100 capital questions...$(NC)"
+	@if [ ! -f "scripts/test_model_generation.py" ]; then \
+		echo "$(RED)❌ Generation test script not found: scripts/test_model_generation.py$(NC)"; \
+		exit 1; \
+	fi
+	@source .venv/bin/activate && PYTHONPATH=src python scripts/test_model_generation.py \
+		--base-model "$${FT_E2E_MODEL_ID:-TinyLlama/TinyLlama-1.1B-Chat-v1.0}" \
+		--test-dir "training" \
+		--output "generation_test_results.json"
+	@echo "$(GREEN)✅ Generation test completed! Check generation_test_results.json for details$(NC)"
+
+test-generation-debug: ## Test latest model with detailed debugging (first 3 questions)
+	@echo "$(BLUE)Testing latest trained model with detailed debugging...$(NC)"
+	@echo "$(YELLOW)Running debug mode with first 3 questions for detailed analysis...$(NC)"
+	@if [ ! -f "scripts/test_model_generation.py" ]; then \
+		echo "$(RED)❌ Generation test script not found: scripts/test_model_generation.py$(NC)"; \
+		exit 1; \
+	fi
+	@source .venv/bin/activate && PYTHONPATH=src python scripts/test_model_generation.py \
+		--base-model "$${FT_E2E_MODEL_ID:-TinyLlama/TinyLlama-1.1B-Chat-v1.0}" \
+		--test-dir "training" \
+		--output "generation_debug_results.json" \
+		--debug \
+		--limit 3
+	@echo "$(GREEN)✅ Debug generation test completed! Check generation_debug_results.json for details$(NC)"
+
+test-generation-quick: ## Test latest model with simple wrapper script
+	@echo "$(BLUE)Running quick generation test...$(NC)"
+	@if [ ! -f "scripts/test_latest_model.sh" ]; then \
+		echo "$(RED)❌ Wrapper script not found: scripts/test_latest_model.sh$(NC)"; \
+		exit 1; \
+	fi
+	@chmod +x scripts/test_latest_model.sh
+	@./scripts/test_latest_model.sh "$(FT_E2E_MODEL_ID)"
+	@echo "$(GREEN)✅ Quick generation test completed!$(NC)"
 
 lint: ## Run linting checks
 	@echo "$(BLUE)Running linters...$(NC)"
@@ -237,6 +398,24 @@ clean: ## Clean build artifacts and cache files
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	rm -rf build/ dist/ htmlcov/
 	@echo "$(GREEN)Clean complete!$(NC)"
+
+clean-training: ## Clean all training runs from training/ directory
+	@echo "$(BLUE)Cleaning training runs from training/ directory...$(NC)"
+	@if [ -d "training" ]; then \
+		echo "$(YELLOW)Found training directory$(NC)"; \
+		ls -la training/ 2>/dev/null || true; \
+		echo "$(YELLOW)Removing all training runs...$(NC)"; \
+		rm -rf training/run-*/; \
+		echo "$(GREEN)✅ Training runs cleaned from training/$(NC)"; \
+	else \
+		echo "$(YELLOW)No training directory found$(NC)"; \
+	fi
+	@echo "$(YELLOW)Cleaning any legacy temporary training files...$(NC)"
+	@rm -rf /tmp/*training* 2>/dev/null || true
+	@rm -rf /tmp/*e2e* 2>/dev/null || true
+	@rm -rf /tmp/*finetune* 2>/dev/null || true
+	@rm -rf /tmp/pytest-of-aasmith/pytest-* 2>/dev/null || true
+	@echo "$(GREEN)Training cleanup complete!$(NC)"
 
 run-api: poetry-check ## Run the FastAPI server with hot reload
 	@echo "$(BLUE)Starting API server...$(NC)"

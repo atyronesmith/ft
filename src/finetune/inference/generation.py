@@ -111,43 +111,30 @@ class MLXTextGenerator:
             logger.debug(message)
 
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
-        """Format text using TinyLlama's native HuggingFace chat template."""
-        try:
-            # Use HuggingFace's native chat template - this is what the model was trained on
-            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template:
-                messages = [{"role": "user", "content": text}]
-                simple_prompt = self.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-                self._debug("Using HuggingFace native chat template")
-            else:
-                # Fallback to simple format
-                simple_prompt = f"Q: {text}\nA:"
-                self._debug("Using simple Q&A format")
-        except Exception as e:
-            self._debug(f"Chat template failed: {e}, using simple format")
-            simple_prompt = f"Q: {text}\nA:"
+        """Use the provided text as-is (assumed to be pre-formatted with chat template)."""
+        # The text parameter is already properly formatted by the calling code
+        # with the correct system message and chat template structure
+        formatted_prompt = text
 
         # Encode with BOS token for proper generation
-        input_ids = self.tokenizer.encode(simple_prompt, return_tensors="np")[0].tolist()
+        input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="np")[0].tolist()
 
         # Ensure BOS token is included for proper generation
         if self.tokenizer.bos_token_id is not None and input_ids[0] != self.tokenizer.bos_token_id:
             input_ids = [self.tokenizer.bos_token_id] + input_ids
-            simple_prompt = self.tokenizer.decode(input_ids)
+            formatted_prompt = self.tokenizer.decode(input_ids)
 
-        self._debug("Using Q&A prompt format")
-        self._debug(f"Template format: {repr(simple_prompt[:100])}...")
-        print("Input IDs:", input_ids)
-        print("Input IDs (as tokens):", [self.tokenizer.decode([tid]) for tid in input_ids])
+        self._debug("Using pre-formatted prompt")
+        self._debug(f"Template format: {repr(formatted_prompt[:100])}...")
 
-        # Print exact template to stdout in verbose mode
         if self.config.verbose:
+            print("Input IDs:", input_ids)
+            print("Input IDs (as tokens):", [self.tokenizer.decode([tid]) for tid in input_ids])
             print("\n=== EXACT TEMPLATE SENT TO MODEL ===")
-            print(repr(simple_prompt))
+            print(repr(formatted_prompt))
             print("=== END TEMPLATE ===\n")
 
-        return simple_prompt, input_ids
+        return formatted_prompt, input_ids
 
     def _sample_next_token(self, logits: Any, temperature: float, top_p: float, top_k: int) -> int:
         """Sample next token with Ollama-compatible sampling strategy.
@@ -156,7 +143,11 @@ class MLXTextGenerator:
         """
         # Apply temperature scaling first
         if temperature <= 1e-6:
-            return int(mx.argmax(logits))
+            argmax_result = mx.argmax(logits)
+            if hasattr(argmax_result, 'item'):
+                return int(argmax_result.item())
+            else:
+                return int(argmax_result)
 
         scaled_logits = logits / temperature
 
@@ -179,7 +170,12 @@ class MLXTextGenerator:
             scaled_logits = mx.where(probs >= prob_threshold, scaled_logits, -float("inf"))
 
         # Sample from the filtered distribution
-        return int(mx.random.categorical(scaled_logits))
+        sample = mx.random.categorical(scaled_logits)
+        # Handle both integer and array returns from categorical
+        if hasattr(sample, 'item'):
+            return int(sample.item())
+        else:
+            return int(sample)
 
     def _should_stop(self, tokens: list[int], step: int, question: str) -> tuple[bool, str]:
         """Determine if generation should stop based on content and conditions."""

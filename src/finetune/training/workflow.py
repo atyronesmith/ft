@@ -66,14 +66,23 @@ class FineTuningWorkflow:
         logger.info(f"Loading training data from: {self.config.data.train_file}")
         raw_train_data = self.dataset_loader.load(self.config.data.train_file)
 
-        # Validate dataset
-        validator = DatasetValidator(["instruction", "output"])
+        # Validate dataset - use flexible validator that auto-detects format
+        validator = DatasetValidator([])  # Empty required fields list - let validator auto-detect format
         validator.validate(raw_train_data)
         summary = validator.get_summary(raw_train_data)
-        logger.info(
-            f"Training dataset: {summary['total_items']} examples, "
-            f"avg instruction length: {summary['avg_instruction_length']:.1f}"
-        )
+
+        # Log appropriate summary based on detected format
+        if summary.get("messages_format_count", 0) > 0:
+            logger.info(
+                f"Training dataset: {summary['total_items']} conversations, "
+                f"avg messages per conversation: {summary.get('avg_messages_per_conversation', 0):.1f}, "
+                f"avg conversation length: {summary.get('avg_conversation_length', 0):.1f}"
+            )
+        else:
+            logger.info(
+                f"Training dataset: {summary['total_items']} examples, "
+                f"avg instruction length: {summary.get('avg_instruction_length', 0):.1f}"
+            )
 
         # Load validation data if provided
         raw_eval_data = None

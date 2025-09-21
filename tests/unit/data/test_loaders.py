@@ -5,9 +5,7 @@ Tests are written first to drive the implementation of data loaders
 for various formats (JSON, JSONL, CSV) with proper validation.
 """
 
-import json
 import os
-import tempfile
 
 import pytest
 from finetune.data import (
@@ -19,6 +17,8 @@ from finetune.data import (
     JSONLoader,
 )
 
+from tests.utils import AssertionHelpers, DatasetFactory, FileHelper
+
 
 class TestJSONLoader:
     """Test JSON dataset loading functionality."""
@@ -26,14 +26,8 @@ class TestJSONLoader:
     def test_load_valid_json_list(self):
         """Test loading valid JSON with list of examples."""
         # Arrange
-        data = [
-            {"instruction": "What is Python?", "output": "A programming language"},
-            {"instruction": "How to loop?", "output": "Use for loops"},
-        ]
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(data, f)
-            temp_path = f.name
+        data = DatasetFactory.create_sample_dataset(size=2)
+        temp_path = FileHelper.create_temp_json_file(data)
 
         try:
             loader = JSONLoader()
@@ -42,11 +36,10 @@ class TestJSONLoader:
             result = loader.load(temp_path)
 
             # Assert
+            AssertionHelpers.assert_dataset_valid(result)
             assert len(result) == 2
-            assert result[0]["instruction"] == "What is Python?"
-            assert result[0]["output"] == "A programming language"
-            assert result[1]["instruction"] == "How to loop?"
-            assert result[1]["output"] == "Use for loops"
+            assert result[0]["instruction"] == data[0]["instruction"]
+            assert result[0]["output"] == data[0]["output"]
         finally:
             os.unlink(temp_path)
 

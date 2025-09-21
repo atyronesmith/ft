@@ -9,8 +9,8 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, Mock
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from finetune.models.base import ModelConfig
@@ -96,6 +96,7 @@ class MockFactory:
         """Create mock PyTorch weights for testing."""
         try:
             import torch
+
             return {
                 "model.embed_tokens.weight": torch.randn(1000, 128),
                 "model.layers.0.self_attn.q_proj.weight": torch.randn(128, 128),
@@ -111,6 +112,7 @@ class MockFactory:
         except ImportError:
             # Return numpy arrays if PyTorch not available
             import numpy as np
+
             return {
                 "model.embed_tokens.weight": np.random.randn(1000, 128),
                 "model.layers.0.self_attn.q_proj.weight": np.random.randn(128, 128),
@@ -129,7 +131,7 @@ class DatasetFactory:
     """Factory for creating test datasets."""
 
     @staticmethod
-    def create_sample_dataset(size: int = 3) -> List[Dict[str, str]]:
+    def create_sample_dataset(size: int = 3) -> list[dict[str, str]]:
         """Create a sample instruction-following dataset."""
         base_data = [
             {
@@ -156,7 +158,7 @@ class DatasetFactory:
         return base_data[:size]
 
     @staticmethod
-    def create_qa_dataset(size: int = 10) -> List[Dict[str, str]]:
+    def create_qa_dataset(size: int = 10) -> list[dict[str, str]]:
         """Create a Q&A dataset with capitals."""
         capitals = [
             ("France", "Paris"),
@@ -173,14 +175,11 @@ class DatasetFactory:
 
         data = []
         for i, (country, capital) in enumerate(capitals[:size]):
-            data.append({
-                "instruction": f"What is the capital of {country}?",
-                "output": capital
-            })
+            data.append({"instruction": f"What is the capital of {country}?", "output": capital})
         return data
 
     @staticmethod
-    def create_math_dataset(size: int = 5) -> List[Dict[str, str]]:
+    def create_math_dataset(size: int = 5) -> list[dict[str, str]]:
         """Create a simple math dataset."""
         problems = [
             ("What is 2 + 2?", "4"),
@@ -190,10 +189,7 @@ class DatasetFactory:
             ("What is 9 - 5?", "4"),
         ]
 
-        return [
-            {"instruction": q, "output": a}
-            for q, a in problems[:size]
-        ]
+        return [{"instruction": q, "output": a} for q, a in problems[:size]]
 
 
 class FileHelper:
@@ -207,7 +203,7 @@ class FileHelper:
             return f.name
 
     @staticmethod
-    def create_temp_jsonl_file(data: List[Dict], suffix: str = ".jsonl") -> str:
+    def create_temp_jsonl_file(data: list[dict], suffix: str = ".jsonl") -> str:
         """Create a temporary JSONL file with the given data."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
             for item in data:
@@ -289,6 +285,7 @@ class TestEnvironment:
         """Check if MLX is available."""
         try:
             import mlx
+
             return True
         except ImportError:
             return False
@@ -298,6 +295,7 @@ class TestEnvironment:
         """Check if PyTorch is available."""
         try:
             import torch
+
             return True
         except ImportError:
             return False
@@ -307,6 +305,7 @@ class TestEnvironment:
         """Check if Transformers is available."""
         try:
             import transformers
+
             return True
         except ImportError:
             return False
@@ -314,17 +313,13 @@ class TestEnvironment:
     @staticmethod
     def skip_if_no_mlx():
         """Skip test if MLX is not available."""
-        return pytest.mark.skipif(
-            not TestEnvironment.mlx_available(),
-            reason="MLX not available"
-        )
+        return pytest.mark.skipif(not TestEnvironment.mlx_available(), reason="MLX not available")
 
     @staticmethod
     def skip_if_no_torch():
         """Skip test if PyTorch is not available."""
         return pytest.mark.skipif(
-            not TestEnvironment.torch_available(),
-            reason="PyTorch not available"
+            not TestEnvironment.torch_available(), reason="PyTorch not available"
         )
 
     @staticmethod
@@ -353,7 +348,7 @@ class AssertionHelpers:
         assert config.num_attention_heads > 0
 
     @staticmethod
-    def assert_dataset_valid(dataset: List[Dict[str, str]], required_fields: List[str] = None):
+    def assert_dataset_valid(dataset: list[dict[str, str]], required_fields: list[str] = None):
         """Assert that a dataset is valid."""
         if required_fields is None:
             required_fields = ["instruction", "output"]
@@ -369,18 +364,20 @@ class AssertionHelpers:
                 assert len(item[field].strip()) > 0, f"Item {i} field '{field}' is empty"
 
     @staticmethod
-    def assert_loss_convergence(losses: List[float], min_reduction: float = 0.05):
+    def assert_loss_convergence(losses: list[float], min_reduction: float = 0.05):
         """Assert that training loss converges."""
         assert len(losses) >= 2, "Need at least 2 loss values"
 
         loss_reduction = (losses[0] - losses[-1]) / losses[0]
-        assert loss_reduction >= min_reduction, f"Loss reduction {loss_reduction:.2%} < {min_reduction:.2%}"
+        assert (
+            loss_reduction >= min_reduction
+        ), f"Loss reduction {loss_reduction:.2%} < {min_reduction:.2%}"
 
         # Check for NaN/inf values
         for i, loss in enumerate(losses):
             assert not (loss != loss), f"Loss at step {i} is NaN"  # NaN check
-            assert loss != float('inf'), f"Loss at step {i} is infinite"
-            assert loss != float('-inf'), f"Loss at step {i} is negative infinite"
+            assert loss != float("inf"), f"Loss at step {i} is infinite"
+            assert loss != float("-inf"), f"Loss at step {i} is negative infinite"
 
 
 # Commonly used fixtures that can be imported

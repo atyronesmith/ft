@@ -117,9 +117,7 @@ class DatasetValidator:
 
         for msg_idx, message in enumerate(messages):
             if not isinstance(message, dict):
-                raise DataValidationError(
-                    f"Message {msg_idx} in item {index} must be a dictionary"
-                )
+                raise DataValidationError(f"Message {msg_idx} in item {index} must be a dictionary")
 
             # Check required fields in message
             if "role" not in message:
@@ -149,9 +147,7 @@ class DatasetValidator:
                 )
 
             if not content.strip():
-                raise DataValidationError(
-                    f"Empty content in message {msg_idx} of item {index}"
-                )
+                raise DataValidationError(f"Empty content in message {msg_idx} of item {index}")
 
             found_roles.add(role)
 
@@ -190,9 +186,7 @@ class DatasetValidator:
 
             # Check field type
             if not isinstance(value, str):
-                raise DataValidationError(
-                    f"Field '{field}' in item {index} must be a string"
-                )
+                raise DataValidationError(f"Field '{field}' in item {index} must be a string")
 
     def get_summary(self, data: list[dict[str, Any]]) -> dict[str, Any]:
         """
@@ -225,7 +219,9 @@ class DatasetValidator:
                 message_counts.append(len(messages))
 
                 # Calculate total conversation length
-                total_length = sum(len(msg.get("content", "")) for msg in messages if isinstance(msg, dict))
+                total_length = sum(
+                    len(msg.get("content", "")) for msg in messages if isinstance(msg, dict)
+                )
                 total_message_length.append(total_length)
 
             elif "instruction" in item or "output" in item:
@@ -246,7 +242,9 @@ class DatasetValidator:
             summary["max_messages_per_conversation"] = max(message_counts)
 
         if total_message_length:
-            summary["avg_conversation_length"] = sum(total_message_length) / len(total_message_length)
+            summary["avg_conversation_length"] = sum(total_message_length) / len(
+                total_message_length
+            )
             summary["min_conversation_length"] = min(total_message_length)
             summary["max_conversation_length"] = max(total_message_length)
 

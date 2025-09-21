@@ -20,10 +20,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 
 def find_most_recent_training_run(base_dir: Path) -> Path | None:
     """Find the most recent training run with a final_model."""
@@ -47,10 +47,11 @@ def find_most_recent_training_run(base_dir: Path) -> Path | None:
     training_runs.sort(key=lambda x: x[0], reverse=True)
     return training_runs[0][1]
 
+
 def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
     """Load the base model and apply LoRA weights."""
-    from finetune.training.workflow import create_quick_workflow
     from finetune.training.lora import load_lora_weights
+    from finetune.training.workflow import create_quick_workflow
 
     print(f"🤖 Loading base model: {base_model_name}")
 
@@ -59,7 +60,7 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
         model_name=base_model_name,
         data_file="dummy",  # Won't be used for generation
         template="tinyllama",
-        output_dir="/tmp/dummy"
+        output_dir="/tmp/dummy",
     )
 
     # Prepare the model (this loads the base model)
@@ -71,13 +72,14 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
     # Load the trained LoRA weights
     load_lora_weights(model, lora_weights_path)
 
-    print(f"✅ Model loaded with LoRA weights applied")
+    print("✅ Model loaded with LoRA weights applied")
 
     # Get tokenizer for generation - use the same infrastructure as training
-    tokenizer = getattr(temp_workflow, 'tokenizer', None)
+    tokenizer = getattr(temp_workflow, "tokenizer", None)
     if tokenizer is None:
         # Use the same common infrastructure that training uses
         from finetune.inference.generation import create_tokenizer_with_special_tokens
+
         print("🔧 Setting up tokenizer with chat template tokens...")
         tokenizer = create_tokenizer_with_special_tokens(base_model_name)
         if tokenizer.pad_token_id is None:
@@ -86,18 +88,22 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
 
     return model, tokenizer
 
-def generate_100_capital_questions() -> List[Tuple[str, str]]:
+
+def generate_100_capital_questions() -> list[tuple[str, str]]:
     """Generate world capital questions using common utilities for consistency."""
     from finetune.utils.chat import get_geography_questions
 
     # Use common utility to get questions with test countries prioritized
     return get_geography_questions(max_count=100, prioritize_test_countries=True)
 
-def generate_answer(model, tokenizer, question: str, max_tokens: int = 50, debug: bool = True) -> str:
+
+def generate_answer(
+    model, tokenizer, question: str, max_tokens: int = 50, debug: bool = True
+) -> str:
     """Generate an answer using the fine-tuned model with detailed debugging."""
     try:
+
         from finetune.inference.generation import GenerationConfig, generate_text
-        import mlx.core as mx
 
         if debug:
             print(f"\n{'='*60}")
@@ -111,7 +117,7 @@ def generate_answer(model, tokenizer, question: str, max_tokens: int = 50, debug
             max_tokens=max_tokens,
             temperature=0.0,  # Greedy decoding for deterministic results
             top_p=0.95,
-            verbose=False  # Keep generation fast, show details at end
+            verbose=False,  # Keep generation fast, show details at end
         )
 
         # CRITICAL FIX: Use common utility to ensure same prompt format as training
@@ -121,7 +127,11 @@ def generate_answer(model, tokenizer, question: str, max_tokens: int = 50, debug
         prompt = apply_chat_template_for_inference(tokenizer, question)
 
         if debug:
-            print(f"📝 Prompt preview: {prompt[:100]}..." if len(prompt) > 100 else f"📝 Prompt: {prompt}")
+            print(
+                f"📝 Prompt preview: {prompt[:100]}..."
+                if len(prompt) > 100
+                else f"📝 Prompt: {prompt}"
+            )
             input_ids = tokenizer.encode(prompt, add_special_tokens=False)
             print(f"🔢 Input tokens: {len(input_ids)}")
 
@@ -140,19 +150,22 @@ def generate_answer(model, tokenizer, question: str, max_tokens: int = 50, debug
             print(f"{'='*60}\n")
         return error_msg
 
-def evaluate_accuracy(questions: List[Tuple[str, str]], answers: List[str]) -> Dict:
+
+def evaluate_accuracy(questions: list[tuple[str, str]], answers: list[str]) -> dict:
     """Evaluate the accuracy of generated answers."""
     correct = 0
     partial = 0
     results = []
 
-    for i, ((question, expected), generated) in enumerate(zip(questions, answers)):
+    for i, ((question, expected), generated) in enumerate(zip(questions, answers, strict=False)):
         # Check for exact match (case insensitive)
         expected_lower = expected.lower()
         generated_lower = generated.lower()
 
         is_correct = expected_lower in generated_lower
-        is_partial = any(word in generated_lower for word in expected_lower.split() if len(word) > 2)
+        is_partial = any(
+            word in generated_lower for word in expected_lower.split() if len(word) > 2
+        )
 
         if is_correct:
             correct += 1
@@ -163,14 +176,16 @@ def evaluate_accuracy(questions: List[Tuple[str, str]], answers: List[str]) -> D
         else:
             status = "❌ INCORRECT"
 
-        results.append({
-            "question": question,
-            "expected": expected,
-            "generated": generated,
-            "correct": is_correct,
-            "partial": is_partial,
-            "status": status
-        })
+        results.append(
+            {
+                "question": question,
+                "expected": expected,
+                "generated": generated,
+                "correct": is_correct,
+                "partial": is_partial,
+                "status": status,
+            }
+        )
 
     total = len(questions)
     accuracy = correct / total * 100
@@ -183,10 +198,11 @@ def evaluate_accuracy(questions: List[Tuple[str, str]], answers: List[str]) -> D
         "incorrect": total - correct - partial,
         "accuracy_percent": accuracy,
         "partial_percent": partial_rate,
-        "results": results
+        "results": results,
     }
 
-def save_results(results: Dict, output_path: Path):
+
+def save_results(results: dict, output_path: Path):
     """Save detailed results to a JSON file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -194,26 +210,34 @@ def save_results(results: Dict, output_path: Path):
     summary = {k: v for k, v in results.items() if k != "results"}
     summary["sample_results"] = results["results"][:10]  # Save first 10 for reference
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(summary, f, indent=2)
 
     print(f"📊 Detailed results saved to: {output_path}")
+
 
 def main():
     """Main test function."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Test model generation on capital questions")
-    parser.add_argument("--base-model", default="microsoft/DialoGPT-small",
-                       help="Base model name (default: microsoft/DialoGPT-small)")
-    parser.add_argument("--test-dir", default="training",
-                       help="Directory to search for training runs (relative to repo root)")
-    parser.add_argument("--output", default="generation_test_results.json",
-                       help="Output file for results")
-    parser.add_argument("--debug", action="store_true",
-                       help="Enable detailed debugging output")
-    parser.add_argument("--limit", type=int, default=100,
-                       help="Limit number of questions to test (default: 100)")
+    parser.add_argument(
+        "--base-model",
+        default="microsoft/DialoGPT-small",
+        help="Base model name (default: microsoft/DialoGPT-small)",
+    )
+    parser.add_argument(
+        "--test-dir",
+        default="training",
+        help="Directory to search for training runs (relative to repo root)",
+    )
+    parser.add_argument(
+        "--output", default="generation_test_results.json", help="Output file for results"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable detailed debugging output")
+    parser.add_argument(
+        "--limit", type=int, default=100, help="Limit number of questions to test (default: 100)"
+    )
 
     args = parser.parse_args()
 
@@ -237,7 +261,7 @@ def main():
     if most_recent is None:
         print("❌ No training runs found!")
         print(f"   Searched in: {test_dir}")
-        print(f"   Looking for directories with: final_model/lora_weights.npz")
+        print("   Looking for directories with: final_model/lora_weights.npz")
         return 1
 
     print(f"📁 Most recent training run: {most_recent.parent.name}")
@@ -251,18 +275,20 @@ def main():
         return 1
 
     # Generate test questions
-    print(f"📝 Generating capital questions...")
+    print("📝 Generating capital questions...")
     all_questions = generate_100_capital_questions()
-    questions = all_questions[:args.limit]  # Limit questions if specified
+    questions = all_questions[: args.limit]  # Limit questions if specified
     print(f"✅ Generated {len(questions)} questions (limited from {len(all_questions)})")
 
     if args.debug:
-        print(f"🔧 Debug mode enabled - detailed output for each question")
+        print("🔧 Debug mode enabled - detailed output for each question")
         if args.limit > 10:
-            print(f"⚠️  Warning: Debug mode with {args.limit} questions will produce a lot of output!")
+            print(
+                f"⚠️  Warning: Debug mode with {args.limit} questions will produce a lot of output!"
+            )
 
     # Run generation test
-    print(f"🚀 Starting generation test...")
+    print("🚀 Starting generation test...")
     start_time = time.time()
 
     answers = []
@@ -279,10 +305,12 @@ def main():
 
         if args.debug:
             print(f"🎯 Generated answer: '{answer}'")
-            print(f"🎯 Match check: {'✅ CORRECT' if expected.lower() in answer.lower() else '❌ INCORRECT'}")
+            print(
+                f"🎯 Match check: {'✅ CORRECT' if expected.lower() in answer.lower() else '❌ INCORRECT'}"
+            )
             print(f"{'='*60}")
             if i < len(questions) - 1:  # Not the last question
-                print(f"📝 Continuing to next question...\n")
+                print("📝 Continuing to next question...\n")
             else:
                 print(f"🏁 All {len(questions)} questions completed!")
 
@@ -293,12 +321,12 @@ def main():
     print(f"📊 Average time per question: {total_time/len(questions):.3f} seconds")
 
     # Evaluate results
-    print(f"📈 Evaluating accuracy...")
+    print("📈 Evaluating accuracy...")
     evaluation = evaluate_accuracy(questions, answers)
 
     # Print summary
-    print(f"\n🎯 Generation Test Results")
-    print(f"=" * 30)
+    print("\n🎯 Generation Test Results")
+    print("=" * 30)
     print(f"Total Questions: {evaluation['total_questions']}")
     print(f"Correct Answers: {evaluation['correct']} ({evaluation['accuracy_percent']:.1f}%)")
     print(f"Partial Matches: {evaluation['partial']} ({evaluation['partial_percent']:.1f}%)")
@@ -307,18 +335,18 @@ def main():
 
     # Show sample results
     if args.debug:
-        print(f"\n📋 All Question-Answer Pairs:")
-        print(f"=" * 80)
-        for i, result in enumerate(evaluation['results']):
+        print("\n📋 All Question-Answer Pairs:")
+        print("=" * 80)
+        for i, result in enumerate(evaluation["results"]):
             print(f"{i+1:3d}. Q: {result['question']}")
             print(f"     Expected: {result['expected']}")
             print(f"     Generated: {result['generated']}")
             print(f"     Status: {result['status']}")
             print()
-        print(f"=" * 80)
+        print("=" * 80)
     else:
-        print(f"\n📋 Sample Results (first 5):")
-        for i, result in enumerate(evaluation['results'][:5]):
+        print("\n📋 Sample Results (first 5):")
+        for i, result in enumerate(evaluation["results"][:5]):
             print(f"{i+1}. Q: {result['question']}")
             print(f"   Expected: {result['expected']}")
             print(f"   Generated: {result['generated']}")
@@ -330,15 +358,16 @@ def main():
     save_results(evaluation, output_path)
 
     # Return exit code based on accuracy
-    if evaluation['accuracy_percent'] >= 70:
+    if evaluation["accuracy_percent"] >= 70:
         print(f"🎉 Test PASSED! Accuracy: {evaluation['accuracy_percent']:.1f}%")
         return 0
-    elif evaluation['accuracy_percent'] >= 40:
+    elif evaluation["accuracy_percent"] >= 40:
         print(f"⚠️  Test PARTIAL! Accuracy: {evaluation['accuracy_percent']:.1f}%")
         return 0
     else:
         print(f"❌ Test FAILED! Accuracy: {evaluation['accuracy_percent']:.1f}%")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

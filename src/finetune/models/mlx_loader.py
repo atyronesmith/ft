@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
 from loguru import logger
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
 try:
     import mlx
@@ -65,19 +64,23 @@ class MLXModelLoader(ModelLoader):
             # Validate cached model is compatible with tokenizer
             if tokenizer:
                 try:
-                    with open(cached_path / "config.json", "r") as f:
+                    with open(cached_path / "config.json") as f:
                         cached_config = json.load(f)
                     cached_vocab_size = cached_config.get("vocab_size", 0)
                     if cached_vocab_size != len(tokenizer):
-                        logger.warning(f"Cache vocab size mismatch: {cached_vocab_size} != {len(tokenizer)}, rebuilding...")
+                        logger.warning(
+                            f"Cache vocab size mismatch: {cached_vocab_size} != {len(tokenizer)}, rebuilding..."
+                        )
                         # Clear incompatible cache and rebuild
                         import shutil
+
                         shutil.rmtree(cached_path)
                     else:
                         return self.load_from_path(cached_path, tokenizer)
                 except Exception as e:
                     logger.warning(f"Cache validation failed: {e}, rebuilding...")
                     import shutil
+
                     shutil.rmtree(cached_path)
             else:
                 return self.load_from_path(cached_path, tokenizer)
@@ -105,7 +108,9 @@ class MLXModelLoader(ModelLoader):
 
         # 2. Resize embedding matrix if tokenizer has extra tokens
         if tokenizer and len(tokenizer) > hf_model.config.vocab_size:
-            logger.info(f"Resizing embedding matrix from {hf_model.config.vocab_size} to {len(tokenizer)}")
+            logger.info(
+                f"Resizing embedding matrix from {hf_model.config.vocab_size} to {len(tokenizer)}"
+            )
             hf_model.resize_token_embeddings(len(tokenizer))
 
         # 3. Convert and save weights
@@ -128,7 +133,9 @@ class MLXModelLoader(ModelLoader):
 
         # Validate we have weights to save
         if not mlx_weights:
-            raise ValueError("No weights were converted - this indicates a critical conversion failure")
+            raise ValueError(
+                "No weights were converted - this indicates a critical conversion failure"
+            )
 
         logger.info(f"Converted {len(mlx_weights)} weight tensors for saving")
 
@@ -161,7 +168,7 @@ class MLXModelLoader(ModelLoader):
     def _load_model_from_npz(self, model_path: Path) -> BaseModel:
         """Load model weights from NPZ file and config."""
         # Load config
-        with open(model_path / "config.json", "r") as f:
+        with open(model_path / "config.json") as f:
             config = ModelConfig(**json.load(f))
 
         # Create MLX model
@@ -192,7 +199,7 @@ class MLXModelLoader(ModelLoader):
             from finetune.models.mlx_models import flatten_params
 
             flat_params = flatten_params(model.parameters())
-            param_count = sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+            param_count = sum(p.size for p in flat_params.values() if hasattr(p, "size"))
 
             if param_count == 0:
                 raise ValueError("Model loaded with 0 parameters - weight loading failed")
@@ -250,9 +257,7 @@ class MLXModelLoader(ModelLoader):
 
         return weights
 
-    def convert_weights(
-        self, source_weights: dict, config: ModelConfig
-    ) -> dict[str, mx.array]:
+    def convert_weights(self, source_weights: dict, config: ModelConfig) -> dict[str, mx.array]:
         """
         Convert PyTorch weights to MLX.
 
@@ -341,7 +346,9 @@ class MLXModelLoader(ModelLoader):
         # Default: return as-is
         return {}
 
-    def _should_skip_weight(self, name: str, config: ModelConfig, tokenizer_provided: bool = False) -> bool:
+    def _should_skip_weight(
+        self, name: str, config: ModelConfig, tokenizer_provided: bool = False
+    ) -> bool:
         """Check if weight should be skipped."""
         # Skip lm_head if it's tied to the embedding layer's weights
         if "lm_head.weight" in name and config.tie_word_embeddings and not tokenizer_provided:
@@ -368,7 +375,9 @@ class MLXModelLoader(ModelLoader):
         """Apply quantization to the model."""
         nn.QuantizedLinear.quantize_module(model, bits)
 
-    def _get_cached_path(self, model_id: str, revision: str | None, tokenizer: Any | None = None) -> Path: # CHANGED: Added tokenizer
+    def _get_cached_path(
+        self, model_id: str, revision: str | None, tokenizer: Any | None = None
+    ) -> Path:  # CHANGED: Added tokenizer
         """Get cache path for a model, making it unique for different vocab sizes."""
         safe_model_id = model_id.replace("/", "--")
         if revision:

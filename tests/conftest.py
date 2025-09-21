@@ -7,9 +7,7 @@ import json
 import tempfile
 import warnings
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 
 
@@ -47,6 +45,7 @@ def temp_dir():
 def sample_model_config():
     """Create a sample model configuration."""
     from tests.utils import ModelConfigFactory
+
     config = ModelConfigFactory.create_sample_config()
     # Return as dict for backward compatibility
     return {
@@ -68,6 +67,7 @@ def sample_model_config():
 def small_model_config():
     """Create a small model config for testing."""
     from tests.utils import ModelConfigFactory
+
     config = ModelConfigFactory.create_small_config("gpt2")
     # Return as dict for backward compatibility
     return {
@@ -126,6 +126,7 @@ def mock_mlx_model(temp_dir, sample_model_config):
 def mock_pytorch_weights():
     """Create mock PyTorch weights."""
     from tests.utils import MockFactory
+
     return MockFactory.create_mock_pytorch_weights()
 
 
@@ -133,6 +134,7 @@ def mock_pytorch_weights():
 def mock_mlx():
     """Mock MLX module."""
     from tests.utils import MockFactory
+
     return MockFactory.create_mock_mlx()
 
 
@@ -140,6 +142,7 @@ def mock_mlx():
 def mock_torch():
     """Mock PyTorch module."""
     from tests.utils import MockFactory
+
     return MockFactory.create_mock_torch()
 
 
@@ -155,18 +158,21 @@ def pytest_configure(config):
 def mlx_available():
     """Check if MLX is available."""
     from tests.utils import TestEnvironment
+
     return TestEnvironment.mlx_available()
 
 
 def torch_available():
     """Check if PyTorch is available."""
     from tests.utils import TestEnvironment
+
     return TestEnvironment.torch_available()
 
 
 def transformers_available():
     """Check if Transformers is available."""
     from tests.utils import TestEnvironment
+
     return TestEnvironment.transformers_available()
 
 

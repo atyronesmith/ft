@@ -90,7 +90,7 @@ def test_generation_only():
         for i, (question, expected) in enumerate(test_cases, 1):
             try:
                 # Clear cache between generations for consistency (avoid hanging)
-                if hasattr(model, 'get_lora_params'):
+                if hasattr(model, "get_lora_params"):
                     trainable_params, _, _ = model.get_lora_params()
                     mx.eval(trainable_params)
                 else:
@@ -162,7 +162,7 @@ def test_single_question_detailed():
     _vprint("\n🎯 Testing with pure greedy decoding (temp=0.0):")
 
     # Clear cache for clean state (avoid hanging)
-    if hasattr(model, 'get_lora_params'):
+    if hasattr(model, "get_lora_params"):
         trainable_params, _, _ = model.get_lora_params()
         mx.eval(trainable_params)
     else:

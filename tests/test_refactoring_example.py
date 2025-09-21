@@ -74,17 +74,18 @@ class TestRefactoredExamples:
             assert os.path.exists(jsonl_file)
 
             # Load and verify content
-            with open(json_file, 'r') as f:
+            with open(json_file) as f:
                 loaded_json = json.load(f)
             assert loaded_json == test_data
 
-            with open(jsonl_file, 'r') as f:
+            with open(jsonl_file) as f:
                 lines = f.readlines()
             assert len(lines) == len(test_data)
 
         finally:
             # Clean up
             import os
+
             os.unlink(json_file)
             os.unlink(jsonl_file)
 
@@ -124,6 +125,7 @@ class TestRefactoredExamples:
 
         # Verify configs are loadable
         import json
+
         with open(hf_model_dir / "config.json") as f:
             hf_config = json.load(f)
         with open(mlx_model_dir / "mlx_config.json") as f:

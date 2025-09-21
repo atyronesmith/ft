@@ -67,7 +67,9 @@ class FineTuningWorkflow:
         raw_train_data = self.dataset_loader.load(self.config.data.train_file)
 
         # Validate dataset - use flexible validator that auto-detects format
-        validator = DatasetValidator([])  # Empty required fields list - let validator auto-detect format
+        validator = DatasetValidator(
+            []
+        )  # Empty required fields list - let validator auto-detect format
         validator.validate(raw_train_data)
         summary = validator.get_summary(raw_train_data)
 

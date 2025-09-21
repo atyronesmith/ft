@@ -328,7 +328,7 @@ if MLX_AVAILABLE:
             try:
                 # Use the same method as the loader for consistency
                 flat_params = flatten_params(self.parameters())
-                return sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+                return sum(p.size for p in flat_params.values() if hasattr(p, "size"))
             except Exception:
                 # Fallback to simple count if flattening fails
                 params = self.parameters()
@@ -575,7 +575,7 @@ if MLX_AVAILABLE:
             try:
                 # Use the same method as the loader for consistency
                 flat_params = flatten_params(self.parameters())
-                return sum(p.size for p in flat_params.values() if hasattr(p, 'size'))
+                return sum(p.size for p in flat_params.values() if hasattr(p, "size"))
             except Exception:
                 # Fallback to recursive count if flattening fails
                 total = 0

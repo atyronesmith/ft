@@ -15,9 +15,7 @@ class TestMLXModels:
     @pytest.fixture
     def small_config(self):
         """Create a small config for testing."""
-        return ModelConfigFactory.create_small_config(
-            model_type="llama"
-        )
+        return ModelConfigFactory.create_small_config(model_type="llama")
 
     @pytest.mark.requires_mlx
     def test_rms_norm(self, small_config):

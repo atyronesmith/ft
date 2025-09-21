@@ -41,18 +41,18 @@ def _get_training_config(duration: str) -> dict:
         "short": {
             "dataset_size": 30,
             "epochs": 2,
-            "description": "Quick validation (30 examples, 2 epochs, ~2 minutes)"
+            "description": "Quick validation (30 examples, 2 epochs, ~2 minutes)",
         },
         "medium": {
             "dataset_size": 100,
             "epochs": 3,
-            "description": "Balanced training (100 examples, 3 epochs, ~8 minutes)"
+            "description": "Balanced training (100 examples, 3 epochs, ~8 minutes)",
         },
         "long": {
             "dataset_size": 100,
             "epochs": 5,
-            "description": "Thorough training (100 examples, 5 epochs, ~15 minutes)"
-        }
+            "description": "Thorough training (100 examples, 5 epochs, ~15 minutes)",
+        },
     }
 
     if duration not in configs:
@@ -72,7 +72,7 @@ pytestmark = [
 
 def _generate_dataset(path: Path, n: int = 100):
     """Generate dataset using common geography utilities for consistency."""
-    from finetune.utils.chat import WORLD_CAPITALS, TEST_COUNTRIES, generate_geography_dataset
+    from finetune.utils.chat import TEST_COUNTRIES, WORLD_CAPITALS, generate_geography_dataset
 
     # Cap dataset size to avoid duplications and ensure test countries are included first
     max_size = min(n, len(WORLD_CAPITALS))
@@ -86,10 +86,7 @@ def _generate_dataset(path: Path, n: int = 100):
             ordered_capitals.append((country, capital))
 
     # Use common utility to generate dataset with consistent formatting
-    data = generate_geography_dataset(
-        ordered_capitals[:max_size],
-        include_multi_turn=True
-    )
+    data = generate_geography_dataset(ordered_capitals[:max_size], include_multi_turn=True)
 
     # Save to file
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +181,7 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
                 import mlx.core as mx
 
                 # Only evaluate trainable parameters to avoid hanging on full 1.1B parameters
-                if hasattr(model, 'get_lora_params'):
+                if hasattr(model, "get_lora_params"):
                     trainable_params, _, _ = model.get_lora_params()
                     mx.eval(trainable_params)
                 else:
@@ -436,7 +433,9 @@ def _train_with_workflow(
 
     # Store expanded tokenizer for training
     workflow.tokenizer = expanded_tokenizer
-    _vprint(f"✅ Model loaded with expanded vocabulary: {len(expanded_tokenizer.get_vocab())} tokens")
+    _vprint(
+        f"✅ Model loaded with expanded vocabulary: {len(expanded_tokenizer.get_vocab())} tokens"
+    )
 
     # Validate model parameters are not NaN/Inf before training
     model_params = workflow.model.parameters()
@@ -532,7 +531,7 @@ def _train_with_workflow(
 
                     if assistant_pos != -1:
                         # Find token position where assistant response begins
-                        prefix_text = full_text[:assistant_pos + len(assistant_marker)]
+                        prefix_text = full_text[: assistant_pos + len(assistant_marker)]
                         prefix_tokens = tok.encode(prefix_text, add_special_tokens=False)
                         assistant_start_token = len(prefix_tokens)
 
@@ -549,16 +548,20 @@ def _train_with_workflow(
                             labels = mx.where(
                                 mx.arange(len(label_seq)) >= assistant_start_in_labels,
                                 label_seq,
-                                ignore
+                                ignore,
                             )
 
                         if i < 3:  # Debug first few examples
                             total_tokens = len(label_seq)
                             trained_tokens = mx.sum(labels != -100).item()
-                            _vprint(f"  - Example {i}: assistant starts at token {assistant_start_token}, training on {trained_tokens}/{total_tokens} tokens")
+                            _vprint(
+                                f"  - Example {i}: assistant starts at token {assistant_start_token}, training on {trained_tokens}/{total_tokens} tokens"
+                            )
                     else:
                         # Fallback: if we can't find assistant marker, use all tokens
-                        _vprint(f"  - Example {i}: Could not find assistant marker, training on all tokens")
+                        _vprint(
+                            f"  - Example {i}: Could not find assistant marker, training on all tokens"
+                        )
                         labels = label_seq
                 else:
                     # Skip sequences that are too short
@@ -591,9 +594,9 @@ def _train_with_workflow(
             # Pretty print tokenized batch details for first few examples
             verbose = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
             if verbose and len(batches) > 0:
-                _vprint("\n" + "="*80)
+                _vprint("\n" + "=" * 80)
                 _vprint("🔤 TOKENIZED TRAINING BATCHES")
-                _vprint("="*80)
+                _vprint("=" * 80)
                 for i, batch in enumerate(batches[:3]):  # Show first 3 batches
                     _vprint(f"\n📦 Batch {i}:")
                     _vprint(f"  Input IDs shape: {batch['input_ids'].shape}")
@@ -602,8 +605,8 @@ def _train_with_workflow(
                     _vprint(f"  Labels: {batch['labels'].tolist()}")
 
                     # Decode the input and expected output for clarity
-                    input_tokens = batch['input_ids'][0].tolist()
-                    label_tokens = batch['labels'][0].tolist()
+                    input_tokens = batch["input_ids"][0].tolist()
+                    label_tokens = batch["labels"][0].tolist()
 
                     _vprint(f"  📝 Input text: '{tok.decode(input_tokens)}'")
                     # For labels, replace -100 (ignore index) with a placeholder for decoding
@@ -612,7 +615,7 @@ def _train_with_workflow(
 
                 if len(batches) > 3:
                     _vprint(f"\n... and {len(batches) - 3} more batches")
-                _vprint("="*80 + "\n")
+                _vprint("=" * 80 + "\n")
 
             return batches
 
@@ -692,13 +695,11 @@ def _train_with_workflow(
 
 
 def test_end_to_end_mlx(tmp_path: Path):
-
     # Get training configuration based on duration setting
     training_config = _get_training_config(TRAINING_DURATION)
 
     # Use a consistent directory structure that matches what the generation test expects
     # This ensures the generation test can find the trained models
-    import tempfile
     import os
 
     # Create a run-specific directory in the repo training folder
@@ -727,21 +728,22 @@ def test_end_to_end_mlx(tmp_path: Path):
     # Pretty print the training data JSON array
     verbose = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
     if verbose:
-        _vprint("\n" + "="*80)
+        _vprint("\n" + "=" * 80)
         _vprint("📋 TRAINING DATA JSON ARRAY")
-        _vprint("="*80)
+        _vprint("=" * 80)
         import json
+
         _vprint(json.dumps(train_data, indent=2, ensure_ascii=False))
-        _vprint("="*80)
+        _vprint("=" * 80)
         _vprint(f"📊 Training data summary: {len(train_data)} examples")
-        _vprint("="*80 + "\n")
+        _vprint("=" * 80 + "\n")
 
         _vprint("Training conversations preview:")
         for i, ex in enumerate(train_data[:5], 1):  # Show first 5 conversations
-            messages = ex['messages']
-            user_msg = next(m['content'] for m in messages if m['role'] == 'user')
-            assistant_msg = next(m['content'] for m in messages if m['role'] == 'assistant')
-            system_msg = next(m['content'] for m in messages if m['role'] == 'system')
+            messages = ex["messages"]
+            user_msg = next(m["content"] for m in messages if m["role"] == "user")
+            assistant_msg = next(m["content"] for m in messages if m["role"] == "assistant")
+            system_msg = next(m["content"] for m in messages if m["role"] == "system")
             _vprint(f"Conversation {i}:")
             _vprint(f"  System: {system_msg}")
             _vprint(f"  User: {user_msg}")

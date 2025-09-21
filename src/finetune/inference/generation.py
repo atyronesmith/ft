@@ -144,7 +144,7 @@ class MLXTextGenerator:
         # Apply temperature scaling first
         if temperature <= 1e-6:
             argmax_result = mx.argmax(logits)
-            if hasattr(argmax_result, 'item'):
+            if hasattr(argmax_result, "item"):
                 return int(argmax_result.item())
             else:
                 return int(argmax_result)
@@ -172,7 +172,7 @@ class MLXTextGenerator:
         # Sample from the filtered distribution
         sample = mx.random.categorical(scaled_logits)
         # Handle both integer and array returns from categorical
-        if hasattr(sample, 'item'):
+        if hasattr(sample, "item"):
             return int(sample.item())
         else:
             return int(sample)

@@ -5,8 +5,7 @@ This module provides centralized functions for creating chat messages and applyi
 templates to ensure training and inference use exactly the same format.
 """
 
-from typing import List, Dict, Any, Optional
-
+from typing import Any, Optional
 
 # System message used consistently across all geography Q&A tasks
 GEOGRAPHY_SYSTEM_MESSAGE = "You are a helpful geography assistant who provides accurate, concise answers about world capitals."
@@ -149,7 +148,7 @@ TEST_COUNTRIES = [
 ]
 
 
-def create_geography_conversation(question: str, answer: Optional[str] = None) -> Dict[str, Any]:
+def create_geography_conversation(question: str, answer: Optional[str] = None) -> dict[str, Any]:
     """
     Create a geography Q&A conversation in the standard messages format.
 
@@ -161,26 +160,17 @@ def create_geography_conversation(question: str, answer: Optional[str] = None) -
         Dictionary with "messages" field containing the conversation
     """
     messages = [
-        {
-            "role": "system",
-            "content": GEOGRAPHY_SYSTEM_MESSAGE
-        },
-        {
-            "role": "user",
-            "content": question
-        }
+        {"role": "system", "content": GEOGRAPHY_SYSTEM_MESSAGE},
+        {"role": "user", "content": question},
     ]
 
     if answer is not None:
-        messages.append({
-            "role": "assistant",
-            "content": answer
-        })
+        messages.append({"role": "assistant", "content": answer})
 
     return {"messages": messages}
 
 
-def create_geography_messages(question: str, answer: Optional[str] = None) -> List[Dict[str, str]]:
+def create_geography_messages(question: str, answer: Optional[str] = None) -> list[dict[str, str]]:
     """
     Create geography Q&A messages list for chat template application.
 
@@ -240,7 +230,7 @@ def apply_chat_template_for_inference(tokenizer, question: str) -> str:
     )
 
 
-def create_multi_turn_geography_conversation(conversations: List[tuple]) -> Dict[str, Any]:
+def create_multi_turn_geography_conversation(conversations: list[tuple]) -> dict[str, Any]:
     """
     Create a multi-turn geography conversation.
 
@@ -250,23 +240,19 @@ def create_multi_turn_geography_conversation(conversations: List[tuple]) -> Dict
     Returns:
         Dictionary with "messages" field containing the multi-turn conversation
     """
-    messages = [
-        {
-            "role": "system",
-            "content": GEOGRAPHY_SYSTEM_MESSAGE
-        }
-    ]
+    messages = [{"role": "system", "content": GEOGRAPHY_SYSTEM_MESSAGE}]
 
     for question, answer in conversations:
-        messages.extend([
-            {"role": "user", "content": question},
-            {"role": "assistant", "content": answer}
-        ])
+        messages.extend(
+            [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
+        )
 
     return {"messages": messages}
 
 
-def get_geography_questions(max_count: Optional[int] = None, prioritize_test_countries: bool = True) -> List[tuple]:
+def get_geography_questions(
+    max_count: Optional[int] = None, prioritize_test_countries: bool = True
+) -> list[tuple]:
     """
     Get geography questions and answers for testing.
 
@@ -303,7 +289,9 @@ def get_geography_questions(max_count: Optional[int] = None, prioritize_test_cou
     return questions
 
 
-def apply_chat_template_with_tokenizer(tokenizer, messages: List[Dict[str, str]], for_training: bool = True) -> str:
+def apply_chat_template_with_tokenizer(
+    tokenizer, messages: list[dict[str, str]], for_training: bool = True
+) -> str:
     """
     Apply chat template consistently using our custom format.
 
@@ -321,12 +309,12 @@ def apply_chat_template_with_tokenizer(tokenizer, messages: List[Dict[str, str]]
     assistant_msg = None
 
     for msg in messages:
-        if msg['role'] == 'system':
-            system_msg = msg['content']
-        elif msg['role'] == 'user':
-            user_msg = msg['content']
-        elif msg['role'] == 'assistant':
-            assistant_msg = msg['content']
+        if msg["role"] == "system":
+            system_msg = msg["content"]
+        elif msg["role"] == "user":
+            user_msg = msg["content"]
+        elif msg["role"] == "assistant":
+            assistant_msg = msg["content"]
 
     # Use our consistent format
     if system_msg:
@@ -342,7 +330,9 @@ def apply_chat_template_with_tokenizer(tokenizer, messages: List[Dict[str, str]]
             return apply_chat_template_for_inference(tokenizer, user_msg)
 
 
-def generate_geography_dataset(countries_and_capitals: List[tuple], include_multi_turn: bool = True) -> List[Dict[str, Any]]:
+def generate_geography_dataset(
+    countries_and_capitals: list[tuple], include_multi_turn: bool = True
+) -> list[dict[str, Any]]:
     """
     Generate a complete geography dataset using consistent formatting.
 
@@ -367,18 +357,21 @@ def generate_geography_dataset(countries_and_capitals: List[tuple], include_mult
             # Example 1: Canada conversation
             [
                 ("What is the capital of Canada?", "Ottawa"),
-                ("What about its largest city?", "Toronto is Canada's largest city.")
+                ("What about its largest city?", "Toronto is Canada's largest city."),
             ],
             # Example 2: European capitals help
             [
-                ("I'm studying European capitals. Can you help?", "Of course! I'd be happy to help you with European capitals."),
-                ("What's the capital of Sweden?", "Stockholm")
+                (
+                    "I'm studying European capitals. Can you help?",
+                    "Of course! I'd be happy to help you with European capitals.",
+                ),
+                ("What's the capital of Sweden?", "Stockholm"),
             ],
             # Example 3: Quick questions
             [
                 ("Quick question - capital of Japan?", "Tokyo"),
-                ("Thanks! And what about South Korea?", "Seoul")
-            ]
+                ("Thanks! And what about South Korea?", "Seoul"),
+            ],
         ]
 
         for conversations in multi_turn_examples:

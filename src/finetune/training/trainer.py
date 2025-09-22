@@ -74,8 +74,8 @@ class LoRATrainer:
         # Initialize optimizer
         self.optimizer = self._create_optimizer()
 
-        # Create MLX-native loss and gradient function
-        self.loss_and_grad_fn = mx.value_and_grad(self._pure_loss_fn)
+        # MLX value_and_grad will be created dynamically in training_step
+        # to properly handle the model parameters
 
         # Training state
         self.global_step = 0
@@ -227,13 +227,7 @@ class LoRATrainer:
 
         return loss
 
-    def _pure_loss_fn(self, model, batch: dict[str, mx.array]) -> mx.array:
-        """Pure loss function for MLX value_and_grad compatibility.
-
-        This function must be pure (no side effects) to work with MLX's
-        functional automatic differentiation.
-        """
-        return self.compute_loss(model, batch)
+    # Removed _pure_loss_fn as we now use inline function in training_step
 
     def _filter_lora_gradients(self, grads: dict) -> dict:
         """Filter gradients to only LoRA parameters using MLX tree operations."""
@@ -260,7 +254,8 @@ class LoRATrainer:
 
         for _, grad in flat_grads:
             if hasattr(grad, "shape"):
-                total += float(mx.sum(grad * grad))
+                # Use .item() to properly convert MLX array to Python float
+                total += mx.sum(grad * grad).item()
 
         return math.sqrt(total) if total > 0.0 else 0.0
 
@@ -283,33 +278,41 @@ class LoRATrainer:
         # 2. Update optimizer (lazy)
         # 3. Execute all operations (mx.eval)
 
-        # Step 1: Compute loss and gradients using the pure loss function
-        loss, grads = self.loss_and_grad_fn(self.model, batch)
+        # Step 1: Create loss function that works with model parameters
+        def loss_fn(model_params):
+            # Update model with current parameters
+            self.model.update(model_params)
+            return self.compute_loss(self.model, batch)
 
-        # Step 2: Filter gradients to only LoRA parameters and update optimizer
-        lora_grads = self._filter_lora_gradients(grads)
-        self.optimizer.update(self.model, lora_grads)
+        # Get trainable parameters (LoRA only)
+        trainable_params = self.model.trainable_parameters()
+
+        # Compute loss and gradients for trainable parameters
+        loss_and_grad_fn = mx.value_and_grad(loss_fn)
+        loss, grads = loss_and_grad_fn(trainable_params)
+
+        # Step 2: Update optimizer with gradients (already filtered to LoRA params)
+        self.optimizer.update(self.model, grads)
 
         # Step 3: Execute all lazy operations
-        mx.eval(self.model.parameters(), self.optimizer.state)
+        mx.eval(trainable_params, self.optimizer.state)
 
         # Validation and metrics
         if mx.isnan(loss) or mx.isinf(loss):
             raise ValueError(f"Loss became NaN/Inf: {float(loss)}")
 
         # Calculate gradient norm for monitoring
-        grad_norm = self._calculate_gradient_norm(lora_grads)
+        grad_norm = self._calculate_gradient_norm(grads)
 
-        # Apply gradient clipping if enabled
+        # Apply gradient clipping if enabled (simplified for now)
         if self.training_config.max_grad_norm > 0 and grad_norm > self.training_config.max_grad_norm:
-            scale = self.training_config.max_grad_norm / (grad_norm + 1e-6)
-            lora_grads = self._scale_gradients(lora_grads, scale)
+            logger.warning(f"High gradient norm: {grad_norm:.4f} > {self.training_config.max_grad_norm}")
 
         # Update learning rate
         lr = self._get_learning_rate()
         self.optimizer.learning_rate = lr
 
-        return {"loss": float(loss), "learning_rate": lr, "grad_norm": grad_norm}
+        return {"loss": loss.item(), "learning_rate": lr, "grad_norm": grad_norm}
 
     def evaluate(self) -> dict[str, float]:
         """Evaluate the model."""

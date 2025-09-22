@@ -50,7 +50,7 @@ def find_most_recent_training_run(base_dir: Path) -> Path | None:
 
 def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
     """Load the base model and apply LoRA weights."""
-    from finetune.training.lora import load_lora_weights
+    from finetune.training.lora import LoRAConfig, load_lora_weights
     from finetune.training.workflow import create_quick_workflow
 
     print(f"🤖 Loading base model: {base_model_name}")
@@ -66,6 +66,17 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
     # Prepare the model (this loads the base model)
     temp_workflow.prepare_model()
     model = temp_workflow.model
+
+    print(f"🔧 Adding LoRA layers to model...")
+    # CRITICAL FIX: Add LoRA layers before loading weights
+    # Use the same config as training
+    lora_config = LoRAConfig(
+        r=temp_workflow.config.lora.r,
+        alpha=temp_workflow.config.lora.alpha,
+        dropout=temp_workflow.config.lora.dropout,
+        target_modules=temp_workflow.config.lora.target_modules,
+    )
+    model.add_lora(lora_config)
 
     print(f"📥 Loading LoRA weights from: {lora_weights_path}")
 

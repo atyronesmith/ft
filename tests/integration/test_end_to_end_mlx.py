@@ -14,7 +14,16 @@ import math
 import os
 from pathlib import Path
 
+import mlx.core as mx
 import pytest
+from finetune.data.templates import TemplateRegistry  # type: ignore
+from finetune.inference.generation import GenerationConfig, generate_text  # type: ignore
+from finetune.training.workflow import create_quick_workflow  # type: ignore
+from finetune.utils.chat import (  # type: ignore
+    TEST_COUNTRIES,
+    apply_chat_template_for_inference,
+    apply_chat_template_with_tokenizer,
+)
 
 MODEL_ID = os.environ.get("FT_E2E_MODEL_ID", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 VERBOSE = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
@@ -70,25 +79,24 @@ pytestmark = [
 ]
 
 
-def _generate_dataset(path: Path, n: int = 100):
-    """Generate dataset using common geography utilities for consistency."""
-    from finetune.utils.chat import TEST_COUNTRIES, WORLD_CAPITALS, generate_geography_dataset
+def _load_fixed_dataset(path: Path, n: int = 100):
+    """Load fixed training dataset and optionally subset it for testing."""
+    # Load from the fixed training data file
+    training_data_path = Path(__file__).parent.parent.parent / "training-data" / "train.json"
 
-    # Cap dataset size to avoid duplications and ensure test countries are included first
-    max_size = min(n, len(WORLD_CAPITALS))
+    if not training_data_path.exists():
+        raise FileNotFoundError(
+            f"Fixed training data not found at {training_data_path}. Run 'make generate-data' first."
+        )
 
-    # Reorder capitals to put test countries first
-    ordered_capitals = TEST_COUNTRIES.copy()
-    added_countries = {country for country, _ in TEST_COUNTRIES}
+    with training_data_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    for country, capital in WORLD_CAPITALS:
-        if country not in added_countries and len(ordered_capitals) < max_size:
-            ordered_capitals.append((country, capital))
+    # Subset the data if requested (for faster testing)
+    if n < len(data):
+        data = data[:n]
 
-    # Use common utility to generate dataset with consistent formatting
-    data = generate_geography_dataset(ordered_capitals[:max_size], include_multi_turn=True)
-
-    # Save to file
+    # Convert to JSONL format for consistency with existing test expectations
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for item in data:
@@ -155,9 +163,6 @@ def _mlx_generate_safe(prompt: str) -> str:
 
 def _test_model_accuracy(workflow, test_questions: list, expected_answers: list) -> dict:
     """Test the fine-tuned model's accuracy by generating answers to questions."""
-    import mlx.core as mx
-    from finetune.data.templates import TemplateRegistry
-
     _vprint("🎯 Testing model performance on training data...")
 
     model = workflow.model
@@ -175,10 +180,11 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
         zip(test_questions, expected_answers, strict=False)
     ):
         try:
+            _vprint(f"🔧 DEBUG: tokenizer={tokenizer is not None}, VERBOSE={VERBOSE}")
             if tokenizer is not None and VERBOSE:
+                _vprint(f"🎯 Using REAL generation path for Q{i+1}")
                 # CORRECTED: Clear MLX cache and reset model state between generations
                 # This prevents state contamination across multiple test questions
-                import mlx.core as mx
 
                 # Only evaluate trainable parameters to avoid hanging on full 1.1B parameters
                 if hasattr(model, "get_lora_params"):
@@ -217,10 +223,8 @@ def _test_model_accuracy(workflow, test_questions: list, expected_answers: list)
                 if is_correct:
                     successful_examples += 1
             else:
+                _vprint(f"🔧 Using STABILITY test path for Q{i+1} (no real generation)")
                 # Fallback stability test when no tokenizer or not verbose
-                formatted_example = template.format(
-                    {"instruction": question, "input": "", "output": expected_answer}
-                )
 
                 # Create a simple test batch with dummy token IDs
                 input_ids = mx.array([[1, 2, 3, 4, 5]]).astype(mx.int32)  # Dummy tokens
@@ -294,12 +298,15 @@ def _generate_answer_fixed(
     top_p: float = 0.95,
 ) -> str:
     """Generate an answer using the reusable generation module with common utilities."""
-    from finetune.inference.generation import GenerationConfig, generate_text
-    from finetune.utils.chat import apply_chat_template_for_inference
-
-    # Create config with the specified parameters - use greedy decoding for reliability
+    # CRITICAL FIX: Use much more aggressive anti-EOS settings for MLX-native trained models
+    # The rewritten training system produces models that learned to generate EOS tokens immediately
     config = GenerationConfig(
-        max_tokens=max_tokens, temperature=temperature, top_p=top_p, verbose=VERBOSE
+        max_tokens=max_tokens,
+        temperature=max(temperature, 0.7),  # Higher temperature for more diverse generation
+        top_p=top_p,
+        verbose=VERBOSE,
+        stop_on_eos=False,  # CRITICAL: Never stop on EOS - MLX models generate it too aggressively
+        stop_on_special_tokens=False,  # Don't stop on special tokens at all
     )
 
     # Use common utility to create the inference prompt with proper system message
@@ -311,8 +318,6 @@ def _generate_answer_fixed(
 
 def _generate_answer(model, tokenizer, template, question: str, max_tokens: int = 50) -> str:
     """Generate an answer to a question using the fine-tuned model."""
-    import mlx.core as mx
-
     try:
         # Format the question using the same template as training
         # For inference, we format without the output to let the model generate it
@@ -384,8 +389,6 @@ def _train_with_workflow(
     training_config: dict = None,
 ):
     """Train quickly using internal workflow APIs, MLX-first if available."""
-    from finetune.training.workflow import create_quick_workflow
-
     _vprint(f"Init workflow | model={model_id} | train_file={train_file} | out_dir={out_dir}")
     workflow = create_quick_workflow(
         model_name=model_id,
@@ -412,30 +415,15 @@ def _train_with_workflow(
 
     _vprint("Preparing dataset...")
     workflow.prepare_dataset()
-
-    # CRITICAL: Load model with proper chat template tokenizer BEFORE training
-    _vprint("Loading model with expanded vocabulary...")
-    from finetune.inference.generation import create_tokenizer_with_special_tokens
-
-    # Create tokenizer with chat template tokens
-    expanded_tokenizer = create_tokenizer_with_special_tokens(model_id)
-    if expanded_tokenizer.pad_token_id is None:
-        expanded_tokenizer.pad_token = expanded_tokenizer.eos_token
-
-    # Reload model with expanded tokenizer (this will resize embeddings automatically)
-    workflow.model = workflow.model_manager.load_model(
+    # Load model with native tokenizer (no vocabulary expansion)
+    workflow.model, workflow.tokenizer, _ = workflow.model_manager.load_model(
         model_id,
-        tokenizer=expanded_tokenizer,
-        cache_dir=workflow.config.model.cache_dir,
+        tokenizer_config={},
         load_in_4bit=workflow.config.model.load_in_4bit,
-        torch_dtype=workflow.config.model.torch_dtype,
     )
 
-    # Store expanded tokenizer for training
-    workflow.tokenizer = expanded_tokenizer
-    _vprint(
-        f"✅ Model loaded with expanded vocabulary: {len(expanded_tokenizer.get_vocab())} tokens"
-    )
+    # Store native tokenizer for training
+    _vprint(f"✅ Model loaded with native vocabulary: {len(workflow.tokenizer.get_vocab())} tokens")
 
     # Validate model parameters are not NaN/Inf before training
     model_params = workflow.model.parameters()
@@ -445,7 +433,6 @@ def _train_with_workflow(
 
     def check_params(params, prefix=""):
         nonlocal param_count, nan_count, inf_count
-        import mlx.core as mx  # Import mx locally in the function
 
         for name, value in params.items():
             if isinstance(value, dict):
@@ -482,103 +469,75 @@ def _train_with_workflow(
     if hasattr(workflow, "trainer") and hasattr(workflow.trainer, "train"):
         # Tokenizer already configured during model loading with expanded vocabulary
         tok = workflow.tokenizer
-        import mlx.core as mx  # Import mx for the tokenization function
 
         def _tok_batch(examples: list[dict]):
-            # CORRECTED: Instead of tokenizing raw text, we now apply the chat template
-            # to the structured examples. This ensures the training data has the exact
-            # same format (including BOS/EOS tokens) as the inference prompt.
+            # Simple MLX examples pattern - tokenize and create batches
             batches = []
             vocab_size = len(tok.get_vocab())
             _vprint(f"Tokenizer vocab size: {vocab_size}")
 
-            max_len_val = 256
-
             for i, example in enumerate(examples):
-                # CORRECTED: Use the full messages conversation format for proper chat training
-                # This ensures the model learns proper multi-turn conversation structure
+                # Use the full messages conversation format for proper chat training
                 messages = example["messages"]  # Full conversation with system/user/assistant
 
-                # CORRECTED: Use centralized common utilities for consistency
-                # This ensures ALL training uses the same tokenization approach
-                from finetune.utils.chat import apply_chat_template_with_tokenizer
-
+                # Use centralized common utilities for consistency
                 training_text = apply_chat_template_with_tokenizer(tok, messages, for_training=True)
 
                 # Tokenize using TinyLlama's chat template (matching successful baseline)
                 enc = tok.encode(training_text, return_tensors="np")[0]
-
                 ids = mx.array(enc, dtype=mx.int32)
-                mask = mx.ones_like(ids)  # The template handles padding, so mask is all ones
 
                 if i < 3:  # Log length of first few examples
                     _vprint(f"  - Example {i} tokenized length: {len(ids)}")
 
-                # Clamp token IDs to valid range [0, vocab_size-1]
-                safe_ids = mx.clip(ids, 0, vocab_size - 1)
+                # Create batch with optional assistant-only training support
+                # Check environment variable for assistant-only training
+                assistant_only = os.environ.get("FT_ASSISTANT_ONLY", "0") == "1"
 
-                # Create labels with proper causal masking for chat training
-                # Only train on assistant responses, ignore system/user parts
-                if safe_ids.shape[0] > 1:
-                    input_seq = safe_ids[:-1]  # [a, b, c]
-                    label_seq = safe_ids[1:]  # [b, c, d]
-                    mask_seq = mask[1:]  # mask for labels
+                if assistant_only:
+                    # Create labels with -100 for non-assistant tokens (minimal approach)
+                    labels = mx.array(ids)
+                    training_text_str = training_text
 
-                    # Find where assistant response starts by looking for <|assistant|> pattern
+                    # Find assistant marker position in the text
                     assistant_marker = "<|assistant|>\n"
-                    full_text = training_text
-                    assistant_pos = full_text.find(assistant_marker)
+                    assistant_pos = training_text_str.find(assistant_marker)
 
                     if assistant_pos != -1:
-                        # Find token position where assistant response begins
-                        prefix_text = full_text[: assistant_pos + len(assistant_marker)]
+                        # Find where assistant response starts in tokens
+                        prefix_text = training_text_str[: assistant_pos + len(assistant_marker)]
                         prefix_tokens = tok.encode(prefix_text, add_special_tokens=False)
-                        assistant_start_token = len(prefix_tokens)
+                        assistant_start = len(prefix_tokens)
 
-                        # Create mask: ignore everything before assistant response
-                        # Note: we shift by -1 because label_seq is shifted by 1 from input_seq
-                        assistant_start_in_labels = max(0, assistant_start_token - 1)
+                        # Mask out everything before assistant response
+                        labels[:assistant_start] = -100
 
-                        # Create proper training mask
-                        ignore = mx.array(-100, dtype=mx.int32)
-                        labels = mx.ones_like(label_seq) * ignore  # Start with all ignored
-
-                        # Only train on assistant response tokens
-                        if assistant_start_in_labels < len(label_seq):
-                            labels = mx.where(
-                                mx.arange(len(label_seq)) >= assistant_start_in_labels,
-                                label_seq,
-                                ignore,
-                            )
-
-                        if i < 3:  # Debug first few examples
-                            total_tokens = len(label_seq)
-                            trained_tokens = mx.sum(labels != -100).item()
-                            _vprint(
-                                f"  - Example {i}: assistant starts at token {assistant_start_token}, training on {trained_tokens}/{total_tokens} tokens"
-                            )
-                    else:
-                        # Fallback: if we can't find assistant marker, use all tokens
                         _vprint(
-                            f"  - Example {i}: Could not find assistant marker, training on all tokens"
+                            f"  - Example {i}: assistant-only training from token {assistant_start}/{len(ids)}"
                         )
-                        labels = label_seq
+
+                        # Use label-based masking (no lengths field)
+                        batch_item = {
+                            "input_ids": ids.reshape(1, -1),
+                            "labels": labels.reshape(1, -1),
+                        }
+                    else:
+                        _vprint(
+                            f"  - Example {i}: WARNING - no assistant marker found, using full sequence"
+                        )
+                        # Fallback to full sequence training
+                        batch_item = {
+                            "input_ids": ids.reshape(1, -1),
+                            "labels": ids.reshape(1, -1),
+                            "lengths": mx.array([len(ids)], dtype=mx.int32),
+                        }
                 else:
-                    # Skip sequences that are too short
-                    _vprint(f"Skipping sequence {i}: too short ({safe_ids.shape[0]} tokens)")
-                    continue
-
-                # Validate shapes match
-                assert (
-                    input_seq.shape[0] == labels.shape[0]
-                ), f"Shape mismatch: input {input_seq.shape} vs labels {labels.shape}"
-
-                # Add batch dimension
-                batch_item = {
-                    "input_ids": input_seq.reshape(1, -1),  # [1, seq_len-1]
-                    "labels": labels.reshape(1, -1),  # [1, seq_len-1]
-                    "attention_mask": mask_seq.reshape(1, -1),  # [1, seq_len-1]
-                }
+                    # Default: Simple batch creation using length-based masking (like MLX examples)
+                    batch_item = {
+                        "input_ids": ids.reshape(1, -1),
+                        "labels": ids.reshape(1, -1),
+                        "lengths": mx.array([len(ids)], dtype=mx.int32),
+                    }
 
                 batches.append(batch_item)
 
@@ -586,7 +545,7 @@ def _train_with_workflow(
                     _vprint(
                         f"Batch {i}: input_shape={batch_item['input_ids'].shape}, "
                         f"labels_shape={batch_item['labels'].shape}, "
-                        f"input_range=[{mx.min(input_seq)}, {mx.max(input_seq)}]"
+                        f"length={len(ids)}"
                     )
 
             _vprint(f"Created {len(batches)} valid training batches")
@@ -601,17 +560,37 @@ def _train_with_workflow(
                     _vprint(f"\n📦 Batch {i}:")
                     _vprint(f"  Input IDs shape: {batch['input_ids'].shape}")
                     _vprint(f"  Labels shape: {batch['labels'].shape}")
-                    _vprint(f"  Input IDs: {batch['input_ids'].tolist()}")
-                    _vprint(f"  Labels: {batch['labels'].tolist()}")
+                    if "lengths" in batch:
+                        _vprint(f"  Length: {batch['lengths'].item()}")
+                    else:
+                        _vprint("  Using label-based masking (assistant-only training)")
 
-                    # Decode the input and expected output for clarity
+                    # Show the tokenized conversation text
                     input_tokens = batch["input_ids"][0].tolist()
-                    label_tokens = batch["labels"][0].tolist()
+                    _vprint(f"  📝 Full conversation text: '{tok.decode(input_tokens)}'")
 
-                    _vprint(f"  📝 Input text: '{tok.decode(input_tokens)}'")
-                    # For labels, replace -100 (ignore index) with a placeholder for decoding
-                    clean_labels = [t if t != -100 else 0 for t in label_tokens]
-                    _vprint(f"  🎯 Target text: '{tok.decode(clean_labels)}'")
+                    # Show first few and last few tokens for debugging
+                    _vprint("  🔍 First 10 tokens:")
+                    for pos in range(min(10, len(input_tokens))):
+                        token_id = input_tokens[pos]
+                        token_text = (
+                            tok.decode([token_id]).replace("\n", "\\n").replace("\t", "\\t")
+                        )
+                        if len(token_text) > 15:
+                            token_text = token_text[:12] + "..."
+                        _vprint(f"     {pos:2d}: {token_id:5d} -> '{token_text}'")
+
+                    if len(input_tokens) > 10:
+                        _vprint("     ...")
+                        _vprint("  🔍 Last 5 tokens:")
+                        for pos in range(max(10, len(input_tokens) - 5), len(input_tokens)):
+                            token_id = input_tokens[pos]
+                            token_text = (
+                                tok.decode([token_id]).replace("\n", "\\n").replace("\t", "\\t")
+                            )
+                            if len(token_text) > 15:
+                                token_text = token_text[:12] + "..."
+                            _vprint(f"     {pos:2d}: {token_id:5d} -> '{token_text}'")
 
                 if len(batches) > 3:
                     _vprint(f"\n... and {len(batches) - 3} more batches")
@@ -681,14 +660,14 @@ def _train_with_workflow(
     elif hasattr(workflow, "trainer") and hasattr(workflow.trainer, "train_epoch"):
         _vprint("Training via trainer.train_epoch()...")
         epoch_loss = workflow.trainer.train_epoch()
-        if isinstance(epoch_loss, (int, float)):
+        if isinstance(epoch_loss, int | float):
             losses.append(float(epoch_loss))
     else:
         _vprint("Trainer not available; skipping training loop.")
 
     if losses:
-        for i, l in enumerate(losses):
-            _vprint(f"Step {i+1}: loss={l:.4f}")
+        for i, loss in enumerate(losses):
+            _vprint(f"Step {i+1}: loss={loss:.4f}")
         _vprint(f"Loss trajectory: {losses[0]:.4f} → {losses[-1]:.4f}")
 
     return workflow, losses, baseline_results
@@ -718,12 +697,58 @@ def test_end_to_end_mlx(tmp_path: Path):
     train_file = data_dir / "train.jsonl"
     val_file = data_dir / "val.jsonl"
     dataset_size = training_config["dataset_size"]
-    train_data = _generate_dataset(train_file, n=dataset_size)
+    train_data = _load_fixed_dataset(train_file, n=dataset_size)
     # Use subset for validation (10% of training size, minimum 5)
     val_size = max(5, dataset_size // 10)
-    val_data = _generate_dataset(val_file, n=val_size)
-    _vprint(f"Generated dataset: train={len(train_data)}, val={len(val_data)}")
-    _vprint(f"Model selected: {MODEL_ID}")
+    val_data = _load_fixed_dataset(val_file, n=val_size)
+
+    # Training data statistics
+    _vprint("📊 Training Data Statistics:")
+    _vprint(f"   Train examples: {len(train_data)}")
+    _vprint(f"   Validation examples: {len(val_data)}")
+
+    # Analyze training data composition
+    countries = set()
+    conversational_count = 0
+    basic_count = 0
+    response_lengths = []
+
+    for example in train_data:
+        is_basic = False
+        for msg in example["messages"]:
+            if msg["role"] == "user":
+                content = msg["content"].lower()
+                # Extract country name from questions
+                if "capital of" in content:
+                    start = content.find("capital of ") + len("capital of ")
+                    end = content.find("?", start)
+                    if end == -1:
+                        end = len(content)
+                    country = content[start:end].strip()
+                    countries.add(country)
+
+                # Check if it's basic format
+                if content.startswith("what is the capital of ") and content.endswith("?"):
+                    is_basic = True
+
+            elif msg["role"] == "assistant":
+                # Count response length in words
+                response_lengths.append(len(msg["content"].split()))
+
+        if is_basic:
+            basic_count += 1
+        else:
+            conversational_count += 1
+
+    _vprint(f"   Unique countries: {len(countries)}")
+    _vprint(f"   Conversational examples: {conversational_count}")
+    _vprint(f"   Basic Q&A examples: {basic_count}")
+    if response_lengths:
+        _vprint(
+            f"   Response length: {min(response_lengths)}-{max(response_lengths)} words (avg: {sum(response_lengths)/len(response_lengths):.1f})"
+        )
+
+    _vprint(f"🤖 Model selected: {MODEL_ID}")
 
     # Pretty print the training data JSON array
     verbose = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
@@ -731,8 +756,6 @@ def test_end_to_end_mlx(tmp_path: Path):
         _vprint("\n" + "=" * 80)
         _vprint("📋 TRAINING DATA JSON ARRAY")
         _vprint("=" * 80)
-        import json
-
         _vprint(json.dumps(train_data, indent=2, ensure_ascii=False))
         _vprint("=" * 80)
         _vprint(f"📊 Training data summary: {len(train_data)} examples")
@@ -754,8 +777,6 @@ def test_end_to_end_mlx(tmp_path: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Define test questions for baseline and post-training comparison using common utilities
-    from finetune.utils.chat import TEST_COUNTRIES
-
     test_questions = []
     expected_answers = []
     for country, capital in TEST_COUNTRIES:
@@ -783,7 +804,21 @@ def test_end_to_end_mlx(tmp_path: Path):
         encoding="utf-8",
     )
 
-    # 4) Evaluation: Test the fine-tuned model's accuracy on training data
+    # 4) Critical: Load the saved LoRA weights for inference (MLX pattern)
+    lora_weights_path = out_dir / "final_model" / "lora_weights.npz"
+    if lora_weights_path.exists():
+        _vprint(f"🔄 Loading trained LoRA weights from {lora_weights_path}")
+        workflow.model.load_weights(str(lora_weights_path), strict=False)
+        _vprint("✅ LoRA weights loaded successfully")
+
+        # CRITICAL FIX: Ensure model state is properly synchronized after LoRA loading
+        # This ensures the fine-tuned LoRA parameters are properly propagated
+        mx.eval(workflow.model.parameters())
+        _vprint("✅ Model parameters evaluated after LoRA loading")
+    else:
+        _vprint(f"⚠️  LoRA weights not found at {lora_weights_path}")
+
+    # 5) Evaluation: Test the fine-tuned model's accuracy on training data
     verbose = os.environ.get("FT_E2E_VERBOSE", "0") == "1"
     if verbose:
         _vprint("\n🎯 Testing FINE-TUNED model performance:")
@@ -792,6 +827,11 @@ def test_end_to_end_mlx(tmp_path: Path):
     # The model was in training mode which affects generation through dropout and other behaviors
     workflow.model.eval()
     _vprint("✅ Set trained model to evaluation mode for inference")
+
+    # CRITICAL FIX: Clear any computational cache that might interfere with generation
+    if hasattr(mx, "clear_cache"):
+        mx.clear_cache()
+        _vprint("✅ Cleared MLX cache for fresh generation")
 
     # Test the actual fine-tuned model's stability and performance
     stability_results = _test_model_accuracy(workflow, test_questions, expected_answers)

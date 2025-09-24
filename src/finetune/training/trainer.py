@@ -31,7 +31,7 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     warmup_steps: int = 50  # Reduced warmup for faster convergence in tests
     max_grad_norm: float = 1.0  # Standard gradient clipping threshold
-    weight_decay: float = 0.01
+    weight_decay: float = 0.01  # Kept for compatibility, but not used with Adam optimizer
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
     adam_epsilon: float = 1e-6  # Increased for numerical stability
@@ -63,8 +63,11 @@ class LoRATrainer:
         self.eval_dataset = eval_dataset
         self.compute_metrics = compute_metrics
 
-        # Add LoRA to model
-        self.model.add_lora(lora_config)
+        # Freeze entire model first (MLX examples pattern)
+        self.model.freeze()
+
+        # Apply LoRA EXACTLY like MLX examples - manual replacement of specific layers
+        self._apply_lora_mlx_pattern(lora_config)
 
         # Get trainable parameters
         self.trainable_params, self.trainable_count, self.total_count = get_lora_trainable_params(
@@ -101,13 +104,62 @@ class LoRATrainer:
             f"out of {self.total_count:,} total ({100 * self.trainable_count / self.total_count:.2f}%)"
         )
 
+    def _apply_lora_mlx_pattern(self, lora_config: LoRAConfig):
+        """Apply LoRA exactly like MLX examples - manual replacement pattern."""
+        from finetune.training.lora import LoRALinear
+
+        print("Loading pretrained model")
+
+        # Default to 16 layers if not specified
+        lora_layers = 16
+
+        # Get the model layers - need to access the actual transformer layers
+        # This assumes the model has a structure like model.model.layers or model.layers
+        if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
+            layers = self.model.model.layers
+        elif hasattr(self.model, "layers"):
+            layers = self.model.layers
+        else:
+            raise ValueError("Cannot find model layers for LoRA application")
+
+        # Apply LoRA to ONLY the last lora_layers layers (MLX example pattern)
+        start_layer = len(layers) - lora_layers
+        logger.info(
+            f"Applying LoRA to layers {start_layer} through {len(layers)-1} (last {lora_layers} layers)"
+        )
+
+        for layer_idx in range(start_layer, len(layers)):
+            layer = layers[layer_idx]
+
+            # Apply to q_proj and v_proj ONLY (just like MLX example)
+            if hasattr(layer, "self_attn"):
+                if hasattr(layer.self_attn, "q_proj"):
+                    layer.self_attn.q_proj = LoRALinear.from_linear(
+                        layer.self_attn.q_proj, rank=lora_config.r
+                    )
+                    logger.debug(f"Applied LoRA to layer {layer_idx} q_proj")
+
+                if hasattr(layer.self_attn, "v_proj"):
+                    layer.self_attn.v_proj = LoRALinear.from_linear(
+                        layer.self_attn.v_proj, rank=lora_config.r
+                    )
+                    logger.debug(f"Applied LoRA to layer {layer_idx} v_proj")
+
+            # Handle MoE models (like in MLX example)
+            if hasattr(layer, "block_sparse_moe"):
+                layer.block_sparse_moe.gate = LoRALinear.from_linear(
+                    layer.block_sparse_moe.gate, rank=lora_config.r
+                )
+                logger.debug(f"Applied LoRA to layer {layer_idx} MoE gate")
+
+        logger.info(f"Successfully applied LoRA to {lora_layers} layers using MLX pattern")
+
     def _create_optimizer(self) -> optim.Optimizer:
-        """Create optimizer for training."""
-        return optim.AdamW(
+        """Create optimizer for training (following MLX examples pattern)."""
+        return optim.Adam(
             learning_rate=self.training_config.learning_rate,
             betas=[self.training_config.adam_beta1, self.training_config.adam_beta2],
             eps=self.training_config.adam_epsilon,
-            weight_decay=self.training_config.weight_decay,
         )
 
     def _get_learning_rate(self) -> float:
@@ -127,192 +179,78 @@ class LoRATrainer:
             return self.training_config.learning_rate * 0.5 * (1 + math.cos(math.pi * progress))
 
     def compute_loss(self, model: BaseModel, batch: dict[str, mx.array]) -> mx.array:
-        """Compute loss for a batch."""
-        input_ids = batch["input_ids"]
-        labels = batch.get("labels", input_ids)
-        mask = batch.get("attention_mask", None)
+        """Compute loss exactly like MLX examples pattern."""
+        inputs = batch["input_ids"].astype(mx.int32)
+        targets = batch["labels"].astype(mx.int32)
+        lengths = batch.get("lengths")
 
-        # Ensure batch dimension (B, L)
-        if len(input_ids.shape) == 1:
-            input_ids = input_ids.reshape(1, -1)
-        if len(labels.shape) == 1:
-            labels = labels.reshape(1, -1)
-        if mask is not None and len(mask.shape) == 1:
-            mask = mask.reshape(1, -1)
+        # Forward pass - run model on inputs (exactly like MLX example)
+        logits = model.forward(inputs)
+        if isinstance(logits, tuple):
+            logits = logits[0]
 
-        # Forward pass
-        # Ensure token ids are int32 for embedding indexing
-        input_ids = input_ids.astype(mx.int32)
-        # Get model output
-        output = model.forward(input_ids)
-
-        # CORRECTED: The model's forward pass now returns a tuple (logits, cache) during inference.
-        # During training, we only care about the logits, so we unpack the tuple if it is one.
-        if isinstance(output, tuple):
-            logits = output[0]
-        else:
-            logits = output
-
-        # Cast to float32 for loss calculation
+        # Convert to float32 for numerical stability (MLX examples pattern)
         logits = logits.astype(mx.float32)
 
-        # Check for NaN in logits after forward pass
-        if mx.any(mx.isnan(logits)) or mx.any(mx.isinf(logits)):
-            raise ValueError("Model forward pass produced NaN/Inf logits")
+        if lengths is not None:
+            # Use length-based masking like MLX examples
+            length_mask = mx.arange(inputs.shape[1])[None, :] < lengths[:, None]
 
-        # Clamp logits to stabilize softmax/CE
-        logits = mx.clip(logits, -20.0, 20.0)
-
-        # Check if labels are already shifted (different shapes indicate pre-shifted data)
-        # If labels and inputs have same shape, we need to shift for language modeling
-        # If they already have different shapes, they're pre-shifted
-        if input_ids.shape == labels.shape and input_ids.shape[1] > 1:
-            # Labels not pre-shifted, do the shifting here
-            logits = logits[:, :-1, :]
-            labels = labels[:, 1:]
-            if mask is not None:
-                mask = mask[:, 1:]
+            # Compute cross-entropy loss (no target clipping like MLX)
+            ce = nn.losses.cross_entropy(logits, targets) * length_mask
+            ntoks = length_mask.sum()
+            ce = ce.sum() / ntoks
+            return ce
         else:
-            # Labels are pre-shifted, just ensure logits match the label length
-            if logits.shape[1] > labels.shape[1]:
-                # Trim logits to match pre-shifted labels
-                logits = logits[:, : labels.shape[1], :]
-            elif logits.shape[1] < labels.shape[1]:
-                # This shouldn't happen, but handle gracefully
-                labels = labels[:, : logits.shape[1]]
-                if mask is not None:
-                    mask = mask[:, : logits.shape[1]]
-        # Flatten sequences
-        B, L, V = logits.shape
-        logits = logits.reshape(B * L, V)
-        labels = labels.reshape(B * L)
-        if mask is not None:
-            mask = mask.reshape(B * L)
+            # CRITICAL FIX: For chat training with sparse labels (-100 ignore index)
+            # We need to use the shifted targets approach but handle -100 properly
+            # Fallback to the original approach for backward compatibility
+            # For causal LM: predict next token, so shift targets
+            shift_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1])
+            shift_targets = targets[:, 1:].reshape(-1)
 
-        # Labels to correct dtype and range
-        labels = labels.astype(mx.int32)
-        try:
-            vocab_limit = int(
-                getattr(getattr(model, "config", object()), "vocab_size", logits.shape[-1])
-            )
-        except Exception:
-            vocab_limit = logits.shape[-1]
-        max_label = mx.array(vocab_limit - 1, dtype=mx.int32)
-        zero = mx.array(0, dtype=mx.int32)
-        labels = mx.minimum(mx.maximum(labels, zero), max_label)
+            # CRITICAL FIX: Proper handling of -100 ignore index for chat training
+            # Only compute loss on assistant response tokens, not system/user prompts
+            valid_indices = mx.where(shift_targets != -100)[0]
 
-        # Cross-entropy loss with proper ignore index handling
-        # Use a simpler approach that avoids MLX boolean indexing issues
+            if len(valid_indices) == 0:
+                return mx.array(0.0, dtype=mx.float32)
 
-        # Replace -100 with a valid label temporarily for loss computation
-        ignore_index = -100
-        temp_labels = mx.where(labels == ignore_index, mx.array(0, dtype=labels.dtype), labels)
+            # Only compute loss on valid (non-ignored) tokens
+            valid_logits = shift_logits[valid_indices]
+            valid_targets = shift_targets[valid_indices]
 
-        # Ensure labels are in valid range [0, vocab_size-1]
-        temp_labels = mx.clip(temp_labels, 0, logits.shape[-1] - 1)
+            # Compute cross-entropy loss only on assistant tokens
+            ce_loss = nn.losses.cross_entropy(valid_logits, valid_targets, reduction="mean")
 
-        # Compute cross-entropy for all tokens
-        per_token_loss = nn.losses.cross_entropy(logits, temp_labels, reduction="none")
-
-        # Create mask for valid tokens (not ignore_index) using safe operations
-        valid_mask = (labels != ignore_index).astype(mx.float32)
-
-        # Mask out ignored tokens and compute average
-        if mx.sum(valid_mask) > 0:
-            masked_loss = per_token_loss * valid_mask
-            loss = mx.sum(masked_loss) / mx.sum(valid_mask)
-        else:
-            # If no valid labels, return a small positive loss to avoid NaN
-            loss = mx.array(0.01, dtype=mx.float32)
-
-        return loss
-
-    # Removed _pure_loss_fn as we now use inline function in training_step
-
-    def _filter_lora_gradients(self, grads: dict) -> dict:
-        """Filter gradients to only LoRA parameters using MLX tree operations."""
-        from mlx.utils import tree_flatten, tree_unflatten
-
-        def is_lora_param(path: str) -> bool:
-            return "lora_a" in path or "lora_b" in path
-
-        # Flatten the gradient tree
-        flat_grads = tree_flatten(grads)
-
-        # Filter to only LoRA parameters
-        lora_grads = [(k, v) for k, v in flat_grads if is_lora_param(k)]
-
-        # Reconstruct the tree
-        return tree_unflatten(lora_grads)
-
-    def _calculate_gradient_norm(self, grads: dict) -> float:
-        """Calculate the global norm of gradients."""
-        from mlx.utils import tree_flatten
-
-        total = 0.0
-        flat_grads = tree_flatten(grads)
-
-        for _, grad in flat_grads:
-            if hasattr(grad, "shape"):
-                # Use .item() to properly convert MLX array to Python float
-                total += mx.sum(grad * grad).item()
-
-        return math.sqrt(total) if total > 0.0 else 0.0
-
-    def _scale_gradients(self, grads: dict, scale: float) -> dict:
-        """Scale gradients by a scalar value."""
-        from mlx.utils import tree_map
-
-        def scale_fn(grad):
-            if hasattr(grad, "shape"):
-                return grad * scale
-            return grad
-
-        return tree_map(scale_fn, grads)
+            return ce_loss
 
     def training_step(self, batch: dict[str, mx.array]) -> dict[str, float]:
-        """Perform a single training step using MLX-native functional patterns."""
+        """Perform a single training step using MLX canonical pattern."""
 
-        # MLX-native training step following canonical three-step pattern:
-        # 1. Compute loss and gradients (lazy)
-        # 2. Update optimizer (lazy)
-        # 3. Execute all operations (mx.eval)
+        # MLX canonical training pattern:
+        # 1. Create value_and_grad function with model and loss
+        # 2. Compute loss and gradients
+        # 3. Update optimizer
+        # 4. Evaluate everything
 
-        # Step 1: Create loss function that works with model parameters
-        def loss_fn(model_params):
-            # Update model with current parameters
-            self.model.update(model_params)
-            return self.compute_loss(self.model, batch)
+        # Step 1: Create value_and_grad function
+        loss_value_and_grad = nn.value_and_grad(self.model, self.compute_loss)
 
-        # Get trainable parameters (LoRA only)
-        trainable_params = self.model.trainable_parameters()
+        # Step 2: Compute loss and gradients
+        loss, grads = loss_value_and_grad(self.model, batch)
 
-        # Compute loss and gradients for trainable parameters
-        loss_and_grad_fn = mx.value_and_grad(loss_fn)
-        loss, grads = loss_and_grad_fn(trainable_params)
-
-        # Step 2: Update optimizer with gradients (already filtered to LoRA params)
+        # Step 3: Update optimizer with gradients
         self.optimizer.update(self.model, grads)
 
-        # Step 3: Execute all lazy operations
-        mx.eval(trainable_params, self.optimizer.state)
-
-        # Validation and metrics
-        if mx.isnan(loss) or mx.isinf(loss):
-            raise ValueError(f"Loss became NaN/Inf: {float(loss)}")
-
-        # Calculate gradient norm for monitoring
-        grad_norm = self._calculate_gradient_norm(grads)
-
-        # Apply gradient clipping if enabled (simplified for now)
-        if self.training_config.max_grad_norm > 0 and grad_norm > self.training_config.max_grad_norm:
-            logger.warning(f"High gradient norm: {grad_norm:.4f} > {self.training_config.max_grad_norm}")
+        # Step 4: Evaluate all operations
+        mx.eval(self.model.parameters(), self.optimizer.state, loss)
 
         # Update learning rate
         lr = self._get_learning_rate()
         self.optimizer.learning_rate = lr
 
-        return {"loss": loss.item(), "learning_rate": lr, "grad_norm": grad_norm}
+        return {"loss": loss.item(), "learning_rate": lr}
 
     def evaluate(self) -> dict[str, float]:
         """Evaluate the model."""
@@ -451,7 +389,7 @@ class LoRATrainer:
 
         interrupted = False
 
-        def handle_interrupt(signum, frame):
+        def handle_interrupt(_signum, _frame):
             nonlocal interrupted
             if not interrupted:
                 interrupted = True
@@ -514,7 +452,6 @@ class LoRATrainer:
                         f"loss={metrics['loss']:.4f} | "
                         f"avg_loss={avg_loss:.4f} | "
                         f"lr={metrics['learning_rate']:.2e} | "
-                        f"grad_norm={metrics['grad_norm']:.4f} | "
                         f"steps/s={steps_per_sec:.2f}"
                     )
 

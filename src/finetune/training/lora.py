@@ -58,70 +58,110 @@ class LoRAConfig:
 
 
 class LoRALinear(nn.Module):
-    """Linear layer with LoRA adaptation.
+    """LoRA Linear layer - EXACT MLX example implementation."""
 
-    This layer adds trainable low-rank matrices A and B to a frozen linear layer,
-    computing: output = Wx + (BA)x * scaling
-    """
+    @staticmethod
+    def from_linear(linear: nn.Linear, rank: int | LoRAConfig = 8):
+        # TODO remove when input_dims and output_dims are attributes
+        # on linear and quantized linear
+        output_dims, input_dims = linear.weight.shape
+        if isinstance(linear, nn.QuantizedLinear):
+            input_dims *= 32 // linear.bits
+        lora_lin = LoRALinear(input_dims, output_dims, rank)
+        lora_lin.linear = linear
+        # CRITICAL: Freeze the base layer to exclude it from trainable_parameters
+        lora_lin.linear.freeze()
+        lora_lin.base.freeze()
+        return lora_lin
+
+    def to_linear(self):
+        linear = self.linear
+        bias = "bias" in linear
+        weight = linear.weight
+        is_quantized = isinstance(linear, nn.QuantizedLinear)
+
+        # Use the same type as the linear weight if not quantized
+        dtype = weight.dtype
+
+        if is_quantized:
+            dtype = mx.float16
+            weight = mx.dequantize(
+                weight,
+                linear.scales,
+                linear.biases,
+                linear.group_size,
+                linear.bits,
+            )
+        output_dims, input_dims = weight.shape
+        fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
+
+        # Keep LoRA weights in their original dtype (bfloat16) - no conversion
+        lora_b = self.scale * self.lora_b.T
+        lora_a = self.lora_a.T
+        fused_linear.weight = weight + lora_b @ lora_a
+        if bias:
+            fused_linear.bias = linear.bias
+
+        if is_quantized:
+            fused_linear = nn.QuantizedLinear.from_linear(
+                fused_linear,
+                linear.group_size,
+                linear.bits,
+            )
+
+        return fused_linear
 
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        config: LoRAConfig,
+        input_dims: int,
+        output_dims: int,
+        lora_rank: int | LoRAConfig = 8,
         bias: bool = False,
+        scale: float = None,
     ):
         super().__init__()
 
-        self.in_features = in_features
-        self.out_features = out_features
-        self.config = config
+        # Handle both LoRAConfig and int for rank (backward compatibility)
+        if isinstance(lora_rank, LoRAConfig):
+            rank = lora_rank.r
+            # Use LoRAConfig dropout if provided
+            self.dropout = lora_rank.dropout if lora_rank.dropout > 0 else None
+            # Use proper LoRA scaling from config
+            self.scale = scale if scale is not None else lora_rank.scaling
+        else:
+            rank = lora_rank
+            self.dropout = None
+            # Default scaling for backward compatibility (alpha=16, r=8 -> scale=2.0)
+            self.scale = scale if scale is not None else 16.0 / rank
 
-        # Frozen base layer
-        self.base = nn.Linear(in_features, out_features, bias=bias)
-        self.base.freeze()
+        # Regular linear layer weights
+        self.linear = nn.Linear(input_dims, output_dims, bias=bias)
+        # Add base attribute for test compatibility
+        self.base = self.linear
 
-        # LoRA parameters with more conservative initialization
-        # Use smaller scale to prevent exploding gradients
-        init_scale = 0.01 / math.sqrt(config.r)  # Much smaller initialization
-        self.lora_a = mx.random.normal(shape=(config.r, in_features), scale=init_scale)
-        self.lora_b = mx.zeros((out_features, config.r))
+        # Low rank lora weights - initialize in bfloat16 for consistency
+        init_scale = 1 / math.sqrt(input_dims)
+        self.lora_a = mx.random.uniform(
+            low=-init_scale,
+            high=init_scale,
+            shape=(input_dims, rank),
+            dtype=mx.bfloat16
+        )
+        self.lora_b = mx.zeros(shape=(rank, output_dims), dtype=mx.bfloat16)
 
-        # Optional dropout
-        self.dropout = nn.Dropout(config.dropout) if config.dropout > 0 else None
+    def __call__(self, x):
+        # Use consistent bfloat16 dtype - no conversions needed
+        y = self.linear(x)
 
-        # DoRA components (if enabled)
-        if config.use_dora:
-            self.magnitude = mx.ones((out_features, 1))
-
-    def __call__(self, x: mx.array) -> mx.array:
-        """Forward pass with LoRA adaptation."""
-        # Base forward pass
-        result = self.base(x)
-
-        # Apply dropout if configured
+        # Apply dropout to input if configured (for compatibility)
+        lora_input = x
         if self.dropout is not None and self.training:
-            x = self.dropout(x)
+            # Create dropout on the fly (MLX pattern)
+            dropout_layer = nn.Dropout(self.dropout)
+            lora_input = dropout_layer(x)
 
-        # LoRA forward pass: (BA)x * scaling
-        lora_out = x @ self.lora_a.T @ self.lora_b.T
-        lora_out = lora_out * self.config.scaling
-
-        # DoRA: apply magnitude vector
-        if self.config.use_dora:
-            # Normalize and scale by magnitude
-            weight_norm = mx.linalg.norm(
-                self.base.weight + self.lora_b @ self.lora_a * self.config.scaling,
-                axis=1,
-                keepdims=True,
-            )
-            lora_out = lora_out * (self.magnitude / weight_norm).T
-
-        return result + lora_out
-
-    def merged_weight(self) -> mx.array:
-        """Get the merged weight matrix (base + LoRA)."""
-        return self.base.weight + (self.lora_b @ self.lora_a) * self.config.scaling
+        z = (lora_input @ self.lora_a) @ self.lora_b
+        return y + self.scale * z
 
 
 class LoRALayer:
@@ -145,20 +185,8 @@ class LoRALayer:
         for name, module in self.named_modules():
             if any(target in name for target in config.target_modules):
                 if isinstance(module, nn.Linear):
-                    # Replace with LoRA version
-                    lora_linear = LoRALinear(
-                        module.weight.shape[1],
-                        module.weight.shape[0],
-                        config,
-                        bias=module.bias is not None,
-                    )
-                    # Copy weights (create new tensors to ensure they're truly frozen)
-                    lora_linear.base.weight = mx.array(module.weight)
-                    if module.bias is not None:
-                        lora_linear.base.bias = mx.array(module.bias)
-
-                    # Ensure the base weights are truly frozen
-                    lora_linear.base.freeze()
+                    # Use the new from_linear factory method
+                    lora_linear = LoRALinear.from_linear(module, config)
 
                     # Replace module
                     parent_name = ".".join(name.split(".")[:-1])
@@ -237,22 +265,11 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
         module_name = name.split(".")[-1] if "." in name else name
         if module_name in config.target_modules:
             if isinstance(module, nn.Linear):
-                # Get parent and create LoRA replacement
-                parent_name = ".".join(name.split(".")[:-1])
-
-                lora_linear = LoRALinear(
-                    module.weight.shape[1],
-                    module.weight.shape[0],
-                    config,
-                    bias=hasattr(module, "bias") and module.bias is not None,
-                )
-
-                # Copy original weights
-                lora_linear.base.weight = module.weight
-                if hasattr(module, "bias") and module.bias is not None:
-                    lora_linear.base.bias = module.bias
+                # Use the new from_linear factory method
+                lora_linear = LoRALinear.from_linear(module, config)
 
                 # Replace in parent
+                parent_name = ".".join(name.split(".")[:-1])
                 parent = _resolve_path(model, parent_name)
                 setattr(parent, module_name, lora_linear)
 
@@ -260,66 +277,39 @@ def apply_lora_to_model(model: nn.Module, config: LoRAConfig) -> nn.Module:
 
 
 def get_lora_trainable_params(model: nn.Module) -> tuple[list[mx.array], int, int]:
-    """Get trainable LoRA parameters from a model.
+    """Get trainable LoRA parameters from a model - MLX example pattern.
 
     Returns:
         Tuple of (parameters, trainable_count, total_count)
     """
-    trainable_params = []
-    trainable_count = 0
-    total_count = 0
+    # Use MLX tree_flatten to get all parameters
+    from mlx.utils import tree_flatten
 
-    # Use the flatten_params function from MLX models to get flat parameter dict
-    try:
-        from finetune.models.mlx_models import flatten_params
+    all_params = tree_flatten(model.parameters())
+    trainable_params = tree_flatten(model.trainable_parameters())
 
-        flat_params = flatten_params(model.parameters())
+    # Count total parameters (exact count, not millions)
+    total_count = sum(v.size for _, v in all_params)
 
-        for name, param in flat_params.items():
-            # Only count parameters that have a size attribute (actual MLX arrays)
-            if hasattr(param, "size"):
-                total_count += param.size
+    # Count trainable parameters (exact count, not millions)
+    trainable_count = sum(v.size for _, v in trainable_params)
 
-                # Check if this is a LoRA parameter
-                if "lora_" in name or "magnitude" in name:
-                    trainable_params.append(param)
-                    trainable_count += param.size
-    except ImportError:
-        # Fallback for non-MLX models
-        for name, param in model.named_parameters():
-            if hasattr(param, "size"):
-                total_count += param.size
+    # Return the actual trainable parameter arrays
+    trainable_param_arrays = [v for _, v in trainable_params]
 
-                # Check if this is a LoRA parameter
-                if "lora_" in name or "magnitude" in name:
-                    trainable_params.append(param)
-                    trainable_count += param.size
-
-    return trainable_params, trainable_count, total_count
+    return trainable_param_arrays, trainable_count, total_count
 
 
 def save_lora_weights(model: nn.Module, path: str | Path) -> None:
-    """Save only LoRA weights to a file."""
-    lora_weights = {}
-    for name, module in model.named_modules():
-        if isinstance(module, LoRALinear):
-            lora_weights[f"{name}.lora_a"] = module.lora_a
-            lora_weights[f"{name}.lora_b"] = module.lora_b
-            if hasattr(module, "magnitude"):
-                lora_weights[f"{name}.magnitude"] = module.magnitude
-    # Save as npz (dict of arrays)
+    """Save only LoRA weights to a file - MLX example pattern."""
+    from mlx.utils import tree_flatten
+
+    # Use MLX tree_flatten like the example
+    lora_weights = dict(tree_flatten(model.trainable_parameters()))
     mx.savez(str(path), **lora_weights)
 
 
 def load_lora_weights(model: nn.Module, path: str | Path) -> None:
-    """Load LoRA weights into a model."""
-    lora_weights = mx.load(str(path))
-
-    for name, module in model.named_modules():
-        if isinstance(module, LoRALinear):
-            if f"{name}.lora_a" in lora_weights:
-                module.lora_a = lora_weights[f"{name}.lora_a"]
-            if f"{name}.lora_b" in lora_weights:
-                module.lora_b = lora_weights[f"{name}.lora_b"]
-            if f"{name}.magnitude" in lora_weights:
-                module.magnitude = lora_weights[f"{name}.magnitude"]
+    """Load LoRA weights into a model - MLX example pattern."""
+    # Load weights using MLX pattern
+    model.load_weights(str(path), strict=False)

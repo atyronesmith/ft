@@ -290,7 +290,7 @@ def run_layer_by_layer_comparison():
         # Load both models
         print(f"Loading models: {model_id}")
         manager = ModelManager()
-        mlx_model = manager.load_model(model_id)
+        mlx_model, _, _ = manager.load_model(model_id)
         hf_model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
         tokenizer = AutoTokenizer.from_pretrained(model_id)
 

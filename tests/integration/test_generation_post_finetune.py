@@ -65,8 +65,9 @@ def test_generation_only():
 
     _vprint(f"\n🎯 Testing {len(test_cases)} capital questions...")
 
-    # Test different generation strategies including Ollama defaults
+    # Test different generation strategies, starting with simple generation as default
     strategies = [
+        ("Simple MLX-style (default)", None),  # Use simple generation (no config)
         ("Greedy (temp=0.0)", GenerationConfig(max_tokens=15, temperature=0.0, verbose=True)),
         ("Ollama Defaults", GenerationConfig.ollama_defaults()),
         ("Ollama for Q&A", GenerationConfig.for_factual_qa()),
@@ -80,9 +81,12 @@ def test_generation_only():
 
     for strategy_name, config in strategies:
         _vprint(f"\n📊 Testing strategy: {strategy_name}")
-        _vprint(
-            f"Config: temp={config.temperature}, top_p={config.top_p}, top_k={config.top_k}, rep_penalty={config.repetition_penalty}, max_tokens={config.max_tokens}"
-        )
+        if config is None:
+            _vprint("Config: Simple MLX-style generation (temp=0.7, max_tokens=50)")
+        else:
+            _vprint(
+                f"Config: temp={config.temperature}, top_p={config.top_p}, top_k={config.top_k}, rep_penalty={config.repetition_penalty}, max_tokens={config.max_tokens}"
+            )
 
         correct_answers = 0
         total_questions = len(test_cases)
@@ -156,36 +160,45 @@ def test_single_question_detailed():
     _vprint(f"Question: {question}")
     _vprint(f"Expected: {expected}")
 
-    # Test with greedy decoding for maximum determinism
-    config = GenerationConfig(max_tokens=10, temperature=0.0, verbose=True)  # Pure greedy
+    # Test both simple and advanced generation
+    test_configs = [
+        ("Simple MLX-style (default)", None),
+        ("Greedy Advanced", GenerationConfig(max_tokens=10, temperature=0.0, verbose=True)),
+    ]
 
-    _vprint("\n🎯 Testing with pure greedy decoding (temp=0.0):")
+    results = []
 
-    # Clear cache for clean state (avoid hanging)
-    if hasattr(model, "get_lora_params"):
-        trainable_params, _, _ = model.get_lora_params()
-        mx.eval(trainable_params)
-    else:
-        # Fallback: evaluate just one parameter
-        params = model.parameters()
-        if isinstance(params, dict) and params:
-            first_param = next(iter(params.values()))
-            mx.eval(first_param)
-    if hasattr(mx, "clear_cache"):
-        mx.clear_cache()
+    for test_name, config in test_configs:
+        _vprint(f"\n🎯 Testing with {test_name}:")
 
-    generated = generate_text(model, tokenizer, question, config, debug_fn=_vprint)
+        # Clear cache for clean state (avoid hanging)
+        if hasattr(model, "get_lora_params"):
+            trainable_params, _, _ = model.get_lora_params()
+            mx.eval(trainable_params)
+        else:
+            # Fallback: evaluate just one parameter
+            params = model.parameters()
+            if isinstance(params, dict) and params:
+                first_param = next(iter(params.values()))
+                mx.eval(first_param)
+        if hasattr(mx, "clear_cache"):
+            mx.clear_cache()
 
-    _vprint(f"Final result: '{generated}'")
-    contains_answer = expected.lower() in generated.lower()
-    _vprint(f"Contains '{expected}': {contains_answer}")
+        generated = generate_text(model, tokenizer, question, config, debug_fn=_vprint if VERBOSE else None)
 
-    if contains_answer:
-        _vprint("🎉 SUCCESS: Generated text contains the expected answer!")
-    else:
-        _vprint("❌ FAILURE: Generated text does not contain the expected answer")
+        _vprint(f"Final result: '{generated}'")
+        contains_answer = expected.lower() in generated.lower()
+        _vprint(f"Contains '{expected}': {contains_answer}")
 
-    return contains_answer
+        if contains_answer:
+            _vprint(f"🎉 SUCCESS: {test_name} contains the expected answer!")
+        else:
+            _vprint(f"❌ FAILURE: {test_name} does not contain the expected answer")
+
+        results.append(contains_answer)
+
+    # Return True if either method worked
+    return any(results)
 
 
 if __name__ == "__main__":

@@ -110,7 +110,7 @@ Impact: Duplicated effort and user fragmentation.
 
 ### G. Architecture diagrams and contracts
 - Add C4 Context and Container diagrams for: CLI-only MVP and future CLI+API+UI deployment.
-- Provide JSONSchema for `train.yml` and dataset templates; include OpenAPI for planned endpoints; add a CLI argument schema table derived from Typer.
+- Provide JSONSchema for `config/train.yml` and dataset templates; include OpenAPI for planned endpoints; add a CLI argument schema table derived from Typer.
 
 ### H. Packaging strategy decision record
 - Add an ADR comparing Homebrew vs PyPI vs DMG: target users, update channels, signing/codesign, sandboxing, dependency constraints, and maintenance burden; select a primary channel for Phase 3.
@@ -122,7 +122,7 @@ Impact: Duplicated effort and user fragmentation.
 - Data Pipeline: Limit claimed formats to JSON/JSONL for now; move CSV/TSV/Parquet/HTML to “Planned.”
 - UI/API: Retitle “Web Dashboard (Secondary)” and “API Endpoints” as Phase 4 scope; add a note that endpoints are illustrative, not implemented.
 - Training Optimization: Add a table clarifying FP16 vs BF16 support in MLX across M-series chips.
-- Configuration Strategy: Add JSONSchema link and example `train.yml` with comments.
+- Configuration Strategy: Add JSONSchema link and example `config/train.yml` with comments.
 - Security & Privacy: Add a subsection detailing secrets storage, local-only guarantees, and Keychain support.
 
 ### MLX_ARCHITECTURE.md
@@ -161,7 +161,7 @@ Week 1
 - Trim scope claims in ARCHITECTURE/TECH_STACK to match code; mark future items clearly.
 
 Week 2
-- Publish JSONSchema for `train.yml` and dataset templates; add deterministic run policy and artifact lineage.
+- Publish JSONSchema for `config/train.yml` and dataset templates; add deterministic run policy and artifact lineage.
 - Draft Universal Checkpoint Spec and add unit tests that validate round-trip MLX↔PyTorch mapping on a small model.
 
 Week 3–4

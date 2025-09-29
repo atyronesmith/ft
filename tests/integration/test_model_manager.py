@@ -180,7 +180,7 @@ class TestModelManager:
             }
         )
 
-        model = manager.load_model(str(model_path))
+        model, tokenizer, config = manager.load_model(str(model_path))
 
         assert model == mock_model
         manager.loader.load_from_path.assert_called_once()
@@ -202,7 +202,7 @@ class TestModelManager:
             }
         )
 
-        model = manager.load_model("gpt2", load_in_4bit=True)
+        model, tokenizer, config = manager.load_model("gpt2", load_in_4bit=True)
 
         assert model == mock_model
         manager.loader.load_from_huggingface.assert_called_once_with(
@@ -375,7 +375,7 @@ class TestEndToEndModelLoading:
             torch.save(weights, model_dir / "pytorch_model.bin")
 
             # Load model
-            model = manager.load_model(str(model_dir))
+            model, tokenizer, config = manager.load_model(str(model_dir))
 
             assert model is not None
             assert model.config.vocab_size == 100
@@ -417,7 +417,7 @@ class TestEndToEndModelLoading:
                                 "parameters": 1000000,
                             }
 
-                            model = manager.load_model("gpt2")
+                            model, tokenizer, config = manager.load_model("gpt2")
 
                         assert model is not None
                         mock_load.assert_called_once()

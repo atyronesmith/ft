@@ -46,11 +46,9 @@ class FineTuningWorkflow:
 
         try:
             # Load model using the model manager
-            self.model = self.model_manager.load_model(
+            self.model, self.tokenizer, self.model_config = self.model_manager.load_model(
                 self.config.model.name,
-                cache_dir=self.config.model.cache_dir,
                 load_in_4bit=self.config.model.load_in_4bit,
-                torch_dtype=self.config.model.torch_dtype,
             )
             logger.info(f"Successfully loaded model: {self.config.model.name}")
 
@@ -105,11 +103,10 @@ class FineTuningWorkflow:
         template = self.template_registry.get_template(self.config.data.template)
         logger.info(f"Applying {self.config.data.template} template...")
 
-        # NOTE: We no longer format the text here. The raw, structured data
-        # will be passed to the trainer, which will use the tokenizer's chat
-        # template for correct formatting. This was a key bug.
-        self.train_dataset = raw_train_data
-        self.eval_dataset = raw_eval_data if raw_eval_data else None
+        # NOTE: We need to tokenize the conversations and create training batches
+        # The trainer expects pre-tokenized batches with input_ids and labels
+        self.train_dataset = self._create_training_batches(raw_train_data, template)
+        self.eval_dataset = self._create_training_batches(raw_eval_data, template) if raw_eval_data else None
 
         logger.info(f"Prepared {len(self.train_dataset)} training examples")
         if self.eval_dataset:
@@ -156,14 +153,54 @@ class FineTuningWorkflow:
 
         logger.info("LoRA trainer initialized successfully")
 
-    def tokenize_dataset(
-        self, texts: list[str], max_length: Optional[int] = None
-    ) -> list[dict[str, mx.array]]:
+    def _create_training_batches(self, conversations: list[dict], template) -> list[dict]:
         """
-        Tokenize text dataset for training.
+        Convert conversations to training batches with input_ids and labels.
 
         Args:
-            texts: List of formatted text strings
+            conversations: List of conversation dictionaries with 'messages'
+            template: Template for formatting conversations
+
+        Returns:
+            List of tokenized batches ready for training
+        """
+        if not conversations:
+            return []
+
+        # We need the tokenizer, so this must be called after prepare_model
+        if not hasattr(self, 'tokenizer') or self.tokenizer is None:
+            raise ValueError("Model and tokenizer must be loaded before creating training batches")
+
+        batches = []
+
+        for conversation in conversations:
+            # Apply the template to format the conversation
+            formatted_text = template.format(conversation)
+
+            # Tokenize the formatted text
+            tokens = self.tokenizer.encode(formatted_text)
+
+            # Create training batch in the format the trainer expects
+            # For chat training, we use the same tokens for input and labels
+            # The trainer will handle the shifting for next-token prediction
+            # IMPORTANT: Add batch dimension to match MLX format (batch_size, seq_len)
+            batch = {
+                "input_ids": mx.array(tokens, dtype=mx.int32).reshape(1, -1),
+                "labels": mx.array(tokens, dtype=mx.int32).reshape(1, -1)
+            }
+
+            batches.append(batch)
+
+        return batches
+
+    def tokenize_dataset(
+        self, data: list, max_length: Optional[int] = None
+    ) -> list[dict[str, mx.array]]:
+        """
+        Tokenize dataset for training. Handles both text strings and structured data.
+
+        Args:
+            data: List of data items (strings, dicts, or training batches)
             max_length: Maximum sequence length
 
         Returns:
@@ -172,20 +209,65 @@ class FineTuningWorkflow:
         if max_length is None:
             max_length = self.config.data.max_length
 
-        # Simple tokenization - in a real implementation, use the model's tokenizer
+        # Handle different data formats
         tokenized = []
-        for text in texts:
-            # For now, create dummy token sequences
-            # In real implementation, use: tokens = tokenizer(text, max_length=max_length, truncation=True)
-            tokens = list(range(min(len(text.split()), max_length)))  # Dummy tokenization
 
-            if len(tokens) > 0:
-                tokenized.append(
-                    {
-                        "input_ids": mx.array(tokens),
+        for item in data:
+            # Case 1: Already a training batch (from _create_training_batches)
+            if isinstance(item, dict) and "input_ids" in item and "labels" in item:
+                tokenized.append(item)
+                continue
+
+            # Case 2: Simple text string (official MLX format)
+            elif isinstance(item, str):
+                # Use actual tokenizer if available
+                if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                    tokens = self.tokenizer.encode(item)
+                    if isinstance(tokens, list):
+                        tokens = tokens[:max_length]  # Truncate if needed
+                    else:
+                        tokens = tokens[0][:max_length]  # Handle batched output
+                else:
+                    # Fallback dummy tokenization
+                    tokens = list(range(min(len(item.split()), max_length)))
+
+                if len(tokens) > 0:
+                    tokenized.append({
+                        "input_ids": mx.array(tokens, dtype=mx.int32),
                         "attention_mask": mx.array([1] * len(tokens)),
-                    }
-                )
+                    })
+
+            # Case 3: Dict with "text" field (official MLX format)
+            elif isinstance(item, dict) and "text" in item:
+                text = item["text"]
+
+                # Use actual tokenizer if available
+                if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                    tokens = self.tokenizer.encode(text)
+                    if isinstance(tokens, list):
+                        tokens = tokens[:max_length]  # Truncate if needed
+                    else:
+                        tokens = tokens[0][:max_length]  # Handle batched output
+                else:
+                    # Fallback dummy tokenization
+                    tokens = list(range(min(len(text.split()), max_length)))
+
+                if len(tokens) > 0:
+                    tokenized.append({
+                        "input_ids": mx.array(tokens, dtype=mx.int32),
+                        "attention_mask": mx.array([1] * len(tokens)),
+                    })
+
+            # Case 4: Dict with "messages" field (our chat format)
+            elif isinstance(item, dict) and "messages" in item:
+                # This should have been processed by _create_training_batches already
+                # But if not, we can handle it here
+                logger.warning("Found unprocessed messages format in tokenize_dataset")
+                continue
+
+            else:
+                logger.warning(f"Unknown data format in tokenize_dataset: {type(item)}")
+                continue
 
         return tokenized
 

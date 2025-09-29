@@ -1,6 +1,6 @@
 # Makefile for FineTune project
 
-.PHONY: help install dev test test-lora lint format clean run-api run-ui docker-build docker-run completion
+.PHONY: help install dev test test-lora lint format clean run-api run-ui docker-build docker-run completion generate-data
 
 # Colors for terminal output
 BLUE := \033[0;34m
@@ -52,6 +52,20 @@ help: ## Show this help message
 	@echo "$(YELLOW)ℹ️  Help$(NC)"
 	@grep -E '^(help):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
+
+# ==============================================================================
+# 📊 Data Generation
+# ==============================================================================
+
+generate-data: ## Generate training data for geography Q&A fine-tuning
+	@echo "$(BLUE)Generating training data...$(NC)"
+	@echo "$(YELLOW)Creating geography Q&A dataset with conversational patterns...$(NC)"
+	@source .venv/bin/activate && PYTHONPATH=src python scripts/generate_training_data.py --verbose
+	@echo "$(GREEN)✅ Training data generated successfully!$(NC)"
+
+# ==============================================================================
+# 🛠️  Environment & Setup
+# ==============================================================================
 
 poetry-check: ## Check if Poetry is installed
 	@if [ -z "$(POETRY)" ]; then \

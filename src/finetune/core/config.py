@@ -70,7 +70,7 @@ class Config:
     """Main configuration class."""
 
     def __init__(self, config_path: Path | None = None):
-        self.config_path = config_path or Path("train.yml")
+        self.config_path = config_path or Path("config/train.yml")
         self.passwords_path = Path("passwords.yml")
         self._config = {}
         self._passwords = {}

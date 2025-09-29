@@ -33,7 +33,7 @@ def compare_weight_loading():
         # Load MLX model
         print("\n📦 Loading MLX model...")
         manager = ModelManager()
-        mlx_model = manager.load_model(model_id)
+        mlx_model, _, _ = manager.load_model(model_id)
         print(f"✅ MLX model loaded: {mlx_model.num_parameters:,} parameters")
 
         # Load HuggingFace model

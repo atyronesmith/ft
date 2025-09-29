@@ -177,7 +177,7 @@ FINETUNE_LOG_LEVEL=INFO
 
 ### Training Configuration
 
-Edit `train.yml` for training parameters:
+Edit `config/train.yml` for training parameters:
 ```yaml
 model:
   name: "meta-llama/Llama-2-7b-hf"

@@ -49,7 +49,7 @@ def find_most_recent_training_run(base_dir: Path) -> Path | None:
 
 
 def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
-    """Load the base model and apply LoRA weights."""
+    """Load the base model and apply LoRA weights using the SAME approach as training."""
     from finetune.training.lora import LoRAConfig, load_lora_weights
     from finetune.training.workflow import create_quick_workflow
 
@@ -59,24 +59,65 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
     temp_workflow = create_quick_workflow(
         model_name=base_model_name,
         data_file="dummy",  # Won't be used for generation
-        template="tinyllama",
+        template="chatml",  # Use ChatML template to match training
         output_dir="/tmp/dummy",
     )
 
-    # Prepare the model (this loads the base model)
-    temp_workflow.prepare_model()
-    model = temp_workflow.model
+    # CRITICAL FIX: Use the native tokenizer to match the updated training approach
+    # Training now uses native tokenizer to avoid vocabulary expansion issues
+    print("🔧 Loading model with native TinyLlama tokenizer (same as training)...")
+    from transformers import AutoTokenizer
 
-    print(f"🔧 Adding LoRA layers to model...")
-    # CRITICAL FIX: Add LoRA layers before loading weights
-    # Use the same config as training
+    # Load model with native tokenizer (SAME AS TRAINING - no vocabulary expansion)
+    temp_workflow.model, temp_workflow.tokenizer, _ = temp_workflow.model_manager.load_model(
+        base_model_name,
+        load_in_4bit=temp_workflow.config.model.load_in_4bit,
+    )
+
+    # Set pad token if needed (SAME AS TRAINING)
+    if temp_workflow.tokenizer.pad_token_id is None:
+        temp_workflow.tokenizer.pad_token = temp_workflow.tokenizer.eos_token
+    model = temp_workflow.model
+    print(f"✅ Model loaded with native vocabulary: {len(temp_workflow.tokenizer.get_vocab())} tokens (matching training)")
+
+    print("🔧 Adding LoRA layers to model using SAME pattern as training...")
+    # CRITICAL FIX: Use the EXACT same LoRA application pattern as training
+    # Training applies LoRA manually to specific layers only
+    from finetune.training.lora import LoRALinear
+
     lora_config = LoRAConfig(
         r=temp_workflow.config.lora.r,
         alpha=temp_workflow.config.lora.alpha,
         dropout=temp_workflow.config.lora.dropout,
         target_modules=temp_workflow.config.lora.target_modules,
     )
-    model.add_lora(lora_config)
+
+    # Freeze entire model first (MLX examples pattern)
+    model.freeze()
+
+    # Apply LoRA to ONLY the last 16 layers (SAME as training)
+    lora_layers = 16
+    layers = model.layers  # TinyLlama has model.layers
+    start_layer = len(layers) - lora_layers
+
+    print(f"Applying LoRA to layers {start_layer} through {len(layers)-1} (last {lora_layers} layers)")
+
+    for layer_idx in range(start_layer, len(layers)):
+        layer = layers[layer_idx]
+
+        # Apply to q_proj and v_proj ONLY (SAME as training)
+        if hasattr(layer, "self_attn"):
+            if hasattr(layer.self_attn, "q_proj"):
+                layer.self_attn.q_proj = LoRALinear.from_linear(
+                    layer.self_attn.q_proj, rank=lora_config
+                )
+                print(f"Applied LoRA to layer {layer_idx} q_proj (scale={lora_config.scaling})")
+
+            if hasattr(layer.self_attn, "v_proj"):
+                layer.self_attn.v_proj = LoRALinear.from_linear(
+                    layer.self_attn.v_proj, rank=lora_config
+                )
+                print(f"Applied LoRA to layer {layer_idx} v_proj (scale={lora_config.scaling})")
 
     print(f"📥 Loading LoRA weights from: {lora_weights_path}")
 
@@ -85,19 +126,7 @@ def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
 
     print("✅ Model loaded with LoRA weights applied")
 
-    # Get tokenizer for generation - use the same infrastructure as training
-    tokenizer = getattr(temp_workflow, "tokenizer", None)
-    if tokenizer is None:
-        # Use the same common infrastructure that training uses
-        from finetune.inference.generation import create_tokenizer_with_special_tokens
-
-        print("🔧 Setting up tokenizer with chat template tokens...")
-        tokenizer = create_tokenizer_with_special_tokens(base_model_name)
-        if tokenizer.pad_token_id is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        print(f"📈 Tokenizer configured with vocabulary: {len(tokenizer.get_vocab())} tokens")
-
-    return model, tokenizer
+    return model, temp_workflow.tokenizer
 
 
 def generate_100_capital_questions() -> list[tuple[str, str]]:
@@ -109,11 +138,18 @@ def generate_100_capital_questions() -> list[tuple[str, str]]:
 
 
 def generate_answer(
-    model, tokenizer, question: str, max_tokens: int = 50, debug: bool = True
+    model, tokenizer, question: str, max_tokens: int = 20, debug: bool = True
 ) -> str:
     """Generate an answer using the fine-tuned model with detailed debugging."""
-    try:
+    import signal
 
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Generation timed out")
+
+    try:
+        # Set a 30-second timeout for generation
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
         from finetune.inference.generation import GenerationConfig, generate_text
 
         if debug:
@@ -121,14 +157,14 @@ def generate_answer(
             print(f"🔍 GENERATION DEBUG for: {question}")
             print(f"{'='*60}")
 
-        # Use the reusable generation function with greedy decoding for consistency
-        # Note: Don't enable verbose in config as it slows down generation significantly
-        # We'll show detailed results at the end instead
+        # Use more conservative settings to avoid hanging
         config = GenerationConfig(
             max_tokens=max_tokens,
-            temperature=0.0,  # Greedy decoding for deterministic results
+            temperature=0.7,  # Higher temperature for more diverse generation
             top_p=0.95,
-            verbose=False,  # Keep generation fast, show details at end
+            verbose=debug,  # Enable verbose for debug mode
+            stop_on_eos=True,  # Allow stopping on EOS to prevent hanging
+            stop_on_special_tokens=True  # Allow stopping on special tokens
         )
 
         # CRITICAL FIX: Use common utility to ensure same prompt format as training
@@ -152,9 +188,19 @@ def generate_answer(
         if debug:
             print(f"🤖 Response: '{response}'")
 
+        # Clear the alarm
+        signal.alarm(0)
         return response
 
+    except TimeoutError:
+        signal.alarm(0)  # Clear the alarm
+        error_msg = "[Generation Timeout: 30s]"
+        if debug:
+            print(f"⏰ GENERATION TIMEOUT: Generation took longer than 30 seconds")
+            print(f"{'='*60}\n")
+        return error_msg
     except Exception as e:
+        signal.alarm(0)  # Clear the alarm
         error_msg = f"[Generation Error: {str(e)[:50]}]"
         if debug:
             print(f"❌ GENERATION ERROR: {e}")
@@ -234,8 +280,8 @@ def main():
     parser = argparse.ArgumentParser(description="Test model generation on capital questions")
     parser.add_argument(
         "--base-model",
-        default="microsoft/DialoGPT-small",
-        help="Base model name (default: microsoft/DialoGPT-small)",
+        default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        help="Base model name (default: TinyLlama/TinyLlama-1.1B-Chat-v1.0)",
     )
     parser.add_argument(
         "--test-dir",

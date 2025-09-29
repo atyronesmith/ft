@@ -46,6 +46,7 @@ FineTune is a modular fine-tuning application optimized for Apple Silicon that e
    - `JSONLoader`, `JSONLLoader`: Multi-format data loading with validation
    - `DatasetLoader`: Auto-detecting format loader
    - `DatasetValidator`: Field validation and summary statistics
+   - **Dual Format Support**: Handles both chat format and official MLX format
 
 2. **Prompt Template System (23 tests)**
    - `AlpacaTemplate`: Instruction-following format with input support
@@ -96,12 +97,18 @@ FineTune is a modular fine-tuning application optimized for Apple Silicon that e
 
 3. **Production Commands Ready**
    ```bash
-   # Quick fine-tuning
-   ft train quick microsoft/DialoGPT-small examples/sample_dataset.json
+   # Quick fine-tuning with default WikiSQL data
+   ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0
 
-   # Production training
-   ft train start microsoft/DialoGPT-small data/training.json \
+   # Quick training with custom data
+   ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0 data/chat/general_conversation.jsonl
+
+   # Production training with all options
+   ft train start TinyLlama/TinyLlama-1.1B-Chat-v1.0 data/wikisql/wikisql_chat_format.jsonl \
      --template chatml --epochs 5 --batch-size 4 --lora-rank 16 --profile chat
+
+   # List available training datasets
+   ft train list-data
 
    # Configuration validation
    ft train validate configs/production.yml
@@ -269,6 +276,93 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+## Test Organization
+
+### Testing Directory Structure
+
+All development and temporary test files are organized in the `dev/experiments/` directory:
+
+```
+dev/experiments/
+├── debug/          # Debugging and diagnostic scripts
+├── comparisons/    # Performance and accuracy comparisons
+├── standalone/     # Isolated functionality tests
+├── mlx/           # MLX-specific tests
+├── temporary/     # Temporary tests (clean regularly)
+└── README.md      # Complete testing documentation
+```
+
+### Test File Guidelines
+
+**✅ DO:**
+- Place all temporary test files in `dev/experiments/` subdirectories
+- Use descriptive filenames that explain the test purpose
+- Include docstrings explaining what the test validates
+- Categorize tests appropriately (debug, comparison, standalone, etc.)
+
+**❌ DON'T:**
+- Put test files in the project root directory
+- Create test files without clear documentation
+- Leave obsolete test files accumulating
+
+**🧹 Regular Maintenance:**
+- Review `dev/experiments/temporary/` monthly and clean up
+- Move useful temporary tests to permanent categories
+- Update `dev/experiments/README.md` when adding new test categories
+
+## Data Organization
+
+### Data Directory Structure
+
+All training data, datasets, and data files are organized in the `data/` directory:
+
+```
+data/
+├── datasets/
+│   ├── training/         # Production training datasets
+│   │   ├── wikisql/      # Default training data (Database Q&A)
+│   │   ├── chat/         # Conversational datasets
+│   │   └── instruction/  # Instruction-following examples
+│   └── examples/         # Example and reference datasets
+│       ├── examples/     # General examples
+│       └── mlx_example_data/  # Official MLX example datasets
+├── testing/              # Testing and comparison data
+│   ├── mlx_comparison_data/   # MLX comparison test data
+│   └── results/          # Test results and outputs
+└── cache/                # Cache and development data
+    ├── development/      # Development and experimental datasets
+    └── training_data/    # Historical training datasets
+```
+
+### Data File Guidelines
+
+**✅ DO:**
+- Place all data files in appropriate `data/` subdirectories
+- Use descriptive directory names for different data types
+- Document data sources and formats in `data/README.md`
+- Store test results in `testing/results/`
+
+**❌ DON'T:**
+- Put data files in the project root directory
+- Mix different types of data in the same directory
+- Leave temporary data files accumulating
+
+**🗂️ File Organization:**
+- **Training datasets** → `data/datasets/training/wikisql/`, `data/datasets/training/chat/`, `data/datasets/training/instruction/`
+- **Development data** → `data/cache/development/`
+- **Test results** → `data/testing/results/`
+- **Comparison data** → `data/testing/mlx_comparison_data/`
+
+### Important Development Tests
+
+**Critical for Validation:**
+- `dev/experiments/comparisons/official_mlx_comparison.py` - Validates against official MLX
+- `dev/experiments/mlx/test_direct_mlx_format.py` - Tests MLX format compatibility
+
+**Useful for Development:**
+- `dev/experiments/debug/debug_lora_generation.py` - Debug LoRA fine-tuning issues
+- `dev/experiments/standalone/test_base_model_standalone.py` - Test model loading
+
 ## Adding New Features
 
 ### Adding a New Model Architecture
@@ -347,6 +441,85 @@ backends = [
 - Use compiled functions in MLX
 - Profile with: `python -m cProfile script.py`
 - Use MLX's unified memory architecture advantage
+
+## Data Format Support
+
+### Supported Input Formats
+
+FineTune supports **dual data format compatibility**, automatically detecting and handling both:
+
+#### 1. Chat Message Format (Our Native Format)
+```json
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"},
+    {"role": "assistant", "content": "Paris"}
+  ]
+}
+```
+
+#### 2. MLX Text Format (Official MLX Examples Compatible)
+```json
+{"text": "Question: What is the capital of France? Answer: Paris"}
+```
+
+### Data Format Auto-Detection
+
+- **Automatic Format Detection**: The `DatasetValidator` automatically detects which format your data uses
+- **Flexible Processing**: The `tokenize_dataset` method in `workflow.py` handles both formats seamlessly
+- **Template Compatibility**: Chat templates work with both formats through automatic conversion
+
+### Format Conversion Examples
+
+```bash
+# Using chat format (recommended for conversational training)
+ft train quick microsoft/DialoGPT-small data/chat_conversations.jsonl --template chatml
+
+# Using MLX text format (compatible with official MLX examples)
+ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0 data/wikisql_examples.jsonl --template alpaca
+
+# Auto-detection works with mixed formats in the same file
+ft train quick meta-llama/Llama-2-7b-hf data/mixed_format.jsonl
+```
+
+### Training Data Sources
+
+1. **WikiSQL Examples** (Default): Pre-included database question-answering examples
+2. **Custom Chat Data**: Your own conversational datasets
+3. **Official MLX Examples**: Direct compatibility with MLX repository examples
+4. **Instruction-Following**: Alpaca-style instruction datasets
+
+### Best Practices
+
+- **Chat Format**: Use for conversational AI, customer support, dialogue systems
+- **MLX Text Format**: Use for task-specific training, official MLX compatibility
+- **Validation**: Always run `ft train validate` to check format compatibility
+- **Templates**: Choose templates that match your data format and use case
+
+### Enhanced CLI Features
+
+#### Default Training Data
+- **WikiSQL Database Q&A**: Pre-included as default training data for quick testing
+- **Automatic Format Selection**: CLI selects appropriate format based on template choice
+- **Zero-Configuration**: Run `ft train quick MODEL_NAME` with no additional setup
+
+#### Data Management Commands
+```bash
+ft train list-data           # Show available example datasets
+ft train quick MODEL         # Use default WikiSQL data
+ft train quick MODEL --data  # Use custom dataset
+```
+
+#### Format Detection & Override
+```bash
+# Automatic format detection (default)
+ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0 my_data.jsonl
+
+# Manual format override if needed
+ft train start MODEL data.jsonl --format chat
+ft train start MODEL data.jsonl --format mlx
+```
 
 ## Code Style Guidelines
 

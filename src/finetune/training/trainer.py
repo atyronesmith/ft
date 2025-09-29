@@ -135,22 +135,22 @@ class LoRATrainer:
             if hasattr(layer, "self_attn"):
                 if hasattr(layer.self_attn, "q_proj"):
                     layer.self_attn.q_proj = LoRALinear.from_linear(
-                        layer.self_attn.q_proj, rank=lora_config.r
+                        layer.self_attn.q_proj, rank=lora_config
                     )
-                    logger.debug(f"Applied LoRA to layer {layer_idx} q_proj")
+                    logger.debug(f"Applied LoRA to layer {layer_idx} q_proj (scale={lora_config.scaling})")
 
                 if hasattr(layer.self_attn, "v_proj"):
                     layer.self_attn.v_proj = LoRALinear.from_linear(
-                        layer.self_attn.v_proj, rank=lora_config.r
+                        layer.self_attn.v_proj, rank=lora_config
                     )
-                    logger.debug(f"Applied LoRA to layer {layer_idx} v_proj")
+                    logger.debug(f"Applied LoRA to layer {layer_idx} v_proj (scale={lora_config.scaling})")
 
             # Handle MoE models (like in MLX example)
             if hasattr(layer, "block_sparse_moe"):
                 layer.block_sparse_moe.gate = LoRALinear.from_linear(
-                    layer.block_sparse_moe.gate, rank=lora_config.r
+                    layer.block_sparse_moe.gate, rank=lora_config
                 )
-                logger.debug(f"Applied LoRA to layer {layer_idx} MoE gate")
+                logger.debug(f"Applied LoRA to layer {layer_idx} MoE gate (scale={lora_config.scaling})")
 
         logger.info(f"Successfully applied LoRA to {lora_layers} layers using MLX pattern")
 
@@ -189,8 +189,7 @@ class LoRATrainer:
         if isinstance(logits, tuple):
             logits = logits[0]
 
-        # Convert to float32 for numerical stability (MLX examples pattern)
-        logits = logits.astype(mx.float32)
+        # Keep logits in bfloat16 for memory efficiency (pure bfloat16 strategy)
 
         if lengths is not None:
             # Use length-based masking like MLX examples
@@ -210,18 +209,26 @@ class LoRATrainer:
             shift_targets = targets[:, 1:].reshape(-1)
 
             # CRITICAL FIX: Proper handling of -100 ignore index for chat training
-            # Only compute loss on assistant response tokens, not system/user prompts
-            valid_indices = mx.where(shift_targets != -100)[0]
+            # Use MLX masking approach instead of index filtering
+            # Create mask for valid tokens (not -100)
+            valid_mask = shift_targets != -100
 
-            if len(valid_indices) == 0:
+            # Check if we have any valid tokens
+            num_valid = valid_mask.sum()
+            if num_valid == 0:
                 return mx.array(0.0, dtype=mx.float32)
 
-            # Only compute loss on valid (non-ignored) tokens
-            valid_logits = shift_logits[valid_indices]
-            valid_targets = shift_targets[valid_indices]
+            # Replace -100 with 0 for loss computation (will be masked out)
+            masked_targets = mx.where(valid_mask, shift_targets, 0)
 
-            # Compute cross-entropy loss only on assistant tokens
-            ce_loss = nn.losses.cross_entropy(valid_logits, valid_targets, reduction="mean")
+            # Compute cross-entropy loss with reduction='none' to get per-token losses
+            ce_losses = nn.losses.cross_entropy(shift_logits, masked_targets, reduction="none")
+
+            # Apply mask to only include valid tokens in loss
+            valid_losses = ce_losses * valid_mask.astype(mx.float32)
+
+            # Compute mean loss over valid tokens only
+            ce_loss = valid_losses.sum() / num_valid.astype(mx.float32)
 
             return ce_loss
 
@@ -262,7 +269,11 @@ class LoRATrainer:
 
         for batch in self.eval_dataset:
             loss = self.compute_loss(self.model, batch)
-            total_loss += float(loss)
+            # Handle both scalar values and MLX arrays
+            if hasattr(loss, 'item'):
+                total_loss += float(loss.item())
+            else:
+                total_loss += float(loss)
             num_batches += 1
 
         avg_loss = total_loss / max(num_batches, 1)
@@ -440,6 +451,15 @@ class LoRATrainer:
                     epoch_loss += metrics["loss"]
                     num_batches += 1
                     self.global_step += 1
+
+                    # Clear MLX cache periodically to prevent memory leaks
+                    if num_batches % 10 == 0:
+                        mx.eval(self.model.parameters())
+                        try:
+                            mx.metal.clear_cache()
+                        except AttributeError:
+                            # Fallback if mx.metal.clear_cache() not available
+                            pass
 
                     # Calculate timing metrics
                     elapsed = time.time() - start_time

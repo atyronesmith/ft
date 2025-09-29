@@ -1,0 +1,34 @@
+{
+  "total_questions": 3,
+  "correct": 0,
+  "partial": 0,
+  "incorrect": 3,
+  "accuracy_percent": 0.0,
+  "partial_percent": 0.0,
+  "sample_results": [
+    {
+      "question": "What is the capital of France?",
+      "expected": "Paris",
+      "generated": "\n<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    },
+    {
+      "question": "What is the capital of Germany?",
+      "expected": "Berlin",
+      "generated": "\n",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    },
+    {
+      "question": "What is the capital of Italy?",
+      "expected": "Rome",
+      "generated": "\n",
+      "correct": false,
+      "partial": false,
+      "status": "\u274c INCORRECT"
+    }
+  ]
+}

@@ -198,13 +198,17 @@ def apply_chat_template_for_training(tokenizer, question: str, answer: str) -> s
     """
     messages = create_geography_messages(question, answer)
 
-    # CRITICAL FIX: Always use our custom format to ensure consistency with training
-    # This ensures our special tokens are properly recognized as single tokens
-    return (
-        f"<|system|>\n{GEOGRAPHY_SYSTEM_MESSAGE}</s>\n"
-        f"<|user|>\n{question}</s>\n"
-        f"<|assistant|>\n{answer}</s>\n"
-    )
+    # Use TinyLlama's native chat template to avoid vocabulary expansion issues
+    # This ensures all tokens are within the original model's vocabulary
+    if hasattr(tokenizer, 'apply_chat_template') and tokenizer.chat_template:
+        return tokenizer.apply_chat_template(messages, tokenize=False)
+    else:
+        # Fallback to our custom format if no native template
+        return (
+            f"<|system|>\n{GEOGRAPHY_SYSTEM_MESSAGE}</s>\n"
+            f"<|user|>\n{question}</s>\n"
+            f"<|assistant|>\n{answer}</s>\n"
+        )
 
 
 def apply_chat_template_for_inference(tokenizer, question: str) -> str:
@@ -220,14 +224,17 @@ def apply_chat_template_for_inference(tokenizer, question: str) -> str:
     """
     messages = create_geography_messages(question, answer=None)
 
-    # CRITICAL FIX: Always use our custom format to ensure consistency with training
-    # TinyLlama's built-in chat template uses the same format, but we need to ensure
-    # our special tokens are properly recognized as single tokens
-    return (
-        f"<|system|>\n{GEOGRAPHY_SYSTEM_MESSAGE}</s>\n"
-        f"<|user|>\n{question}</s>\n"
-        f"<|assistant|>\n"
-    )
+    # Use TinyLlama's native chat template to avoid vocabulary expansion issues
+    # This ensures all tokens are within the original model's vocabulary
+    if hasattr(tokenizer, 'apply_chat_template') and tokenizer.chat_template:
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    else:
+        # Fallback to our custom format if no native template
+        return (
+            f"<|system|>\n{GEOGRAPHY_SYSTEM_MESSAGE}</s>\n"
+            f"<|user|>\n{question}</s>\n"
+            f"<|assistant|>\n"
+        )
 
 
 def create_multi_turn_geography_conversation(conversations: list[tuple]) -> dict[str, Any]:
@@ -293,41 +300,47 @@ def apply_chat_template_with_tokenizer(
     tokenizer, messages: list[dict[str, str]], for_training: bool = True
 ) -> str:
     """
-    Apply chat template consistently using our custom format.
+    Apply chat template consistently using the tokenizer's native template.
 
     Args:
-        tokenizer: The tokenizer (should have our special tokens)
+        tokenizer: The tokenizer with chat template support
         messages: List of message dicts with 'role' and 'content'
         for_training: If True, includes complete conversation. If False, stops at assistant prompt.
 
     Returns:
-        Formatted text using our consistent special token format
+        Formatted text using the tokenizer's native chat template
     """
-    # Extract components from messages
-    system_msg = None
-    user_msg = None
-    assistant_msg = None
-
-    for msg in messages:
-        if msg["role"] == "system":
-            system_msg = msg["content"]
-        elif msg["role"] == "user":
-            user_msg = msg["content"]
-        elif msg["role"] == "assistant":
-            assistant_msg = msg["content"]
-
-    # Use our consistent format
-    if system_msg:
-        if for_training and assistant_msg:
-            return apply_chat_template_for_training(tokenizer, user_msg, assistant_msg)
+    # Use the tokenizer's native chat template when available
+    if hasattr(tokenizer, 'apply_chat_template') and tokenizer.chat_template:
+        if for_training:
+            # For training, include the complete conversation
+            return tokenizer.apply_chat_template(messages, tokenize=False)
         else:
-            return apply_chat_template_for_inference(tokenizer, user_msg)
+            # For inference, stop at assistant prompt for generation
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
-        # Fallback: use default system message
-        if for_training and assistant_msg:
-            return apply_chat_template_for_training(tokenizer, user_msg, assistant_msg)
+        # Fallback: extract components and use our helper functions
+        system_msg = None
+        user_msg = None
+        assistant_msg = None
+
+        for msg in messages:
+            if msg["role"] == "system":
+                system_msg = msg["content"]
+            elif msg["role"] == "user":
+                user_msg = msg["content"]
+            elif msg["role"] == "assistant":
+                assistant_msg = msg["content"]
+
+        # Use our fallback format
+        if user_msg:
+            if for_training and assistant_msg:
+                return apply_chat_template_for_training(tokenizer, user_msg, assistant_msg)
+            else:
+                return apply_chat_template_for_inference(tokenizer, user_msg)
         else:
-            return apply_chat_template_for_inference(tokenizer, user_msg)
+            # Shouldn't happen, but handle gracefully
+            return ""
 
 
 def generate_geography_dataset(

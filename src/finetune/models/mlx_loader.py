@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-import torch
+import transformers
 from loguru import logger
-from transformers import AutoModelForCausalLM
+
+from finetune.models.base import BaseModel, ModelConfig, ModelLoader
+from finetune.models.mlx_models import get_mlx_model
 
 try:
-    import mlx
     import mlx.core as mx
     import mlx.nn as nn
     from mlx.utils import tree_map
@@ -28,14 +28,12 @@ if TYPE_CHECKING and MLX_AVAILABLE:
     # For type hints only
     import mlx.core as mx
 
-from finetune.models.base import BaseModel, ModelConfig, ModelLoader
-from finetune.models.mlx_models import get_mlx_model
-
 
 class MLXModelLoader(ModelLoader):
     """Loader for MLX models from HuggingFace."""
 
     def __init__(self, cache_dir: Path | None = None):
+        logger.info("Entering MLXModelLoader.__init__")
         if not MLX_AVAILABLE:
             raise ImportError("MLX is not installed. Please install with: pip install mlx")
 
@@ -49,168 +47,156 @@ class MLXModelLoader(ModelLoader):
         cache_dir: Path | None = None,
         load_in_4bit: bool = False,
         load_in_8bit: bool = False,
-        tokenizer=None,
+        tokenizer_config: dict | None = None,
         **kwargs,
     ) -> BaseModel:
-        """Load a model from HuggingFace Hub."""
+        logger.info("Entering MLXModelLoader.load_from_huggingface")
+        """Load a model from HuggingFace Hub with caching."""
         logger.info(f"Loading model from HuggingFace: {model_id}")
+
+        # Only support TinyLlama for now (like working example)
+        if "tinyllama" not in model_id.lower():
+            raise ValueError(f"Only TinyLlama models are supported for now. Got: {model_id}")
 
         cache_dir = cache_dir or self.cache_dir
 
-        # Try to load from cache first
-        cached_path = self._get_cached_path(model_id, revision, tokenizer)
-        if cached_path.exists():
+        # Check if model is already cached
+        cached_path = self._get_cached_path(model_id, revision, tokenizer_config)
+        if cached_path.exists() and (cached_path / "config.json").exists():
             logger.info(f"Loading from cache: {cached_path}")
-            # Validate cached model is compatible with tokenizer
-            if tokenizer:
-                try:
-                    with open(cached_path / "config.json") as f:
-                        cached_config = json.load(f)
-                    cached_vocab_size = cached_config.get("vocab_size", 0)
-                    if cached_vocab_size != len(tokenizer):
-                        logger.warning(
-                            f"Cache vocab size mismatch: {cached_vocab_size} != {len(tokenizer)}, rebuilding..."
-                        )
-                        # Clear incompatible cache and rebuild
-                        import shutil
-
-                        shutil.rmtree(cached_path)
-                    else:
-                        return self.load_from_path(cached_path, tokenizer)
-                except Exception as e:
-                    logger.warning(f"Cache validation failed: {e}, rebuilding...")
-                    import shutil
-
-                    shutil.rmtree(cached_path)
-            else:
-                return self.load_from_path(cached_path, tokenizer)
+            return self._load_hf_model_to_mlx(cached_path, tokenizer_config)
 
         # Download from HuggingFace
         try:
             from huggingface_hub import snapshot_download
-        except ImportError:
-            raise ImportError("Please install huggingface_hub: pip install huggingface_hub")
+        except ImportError as e:
+            raise ImportError(
+                "Please install huggingface_hub: pip install huggingface_hub"
+            ) from e
 
-        # If not cached, download, convert, and cache
-        else:
-            logger.info(f"Downloading model {model_id} from HuggingFace Hub...")
-            hf_path = snapshot_download(repo_id=model_id, local_dir=cached_path)
-            return self._load_and_convert(Path(hf_path), cached_path, tokenizer)
+        logger.info(f"Downloading model {model_id} from HuggingFace Hub...")
+        # Download to HF cache location (revision=revision if specified)
+        download_kwargs = {"repo_id": model_id, "allow_patterns": ["*.json", "*.safetensors", "tokenizer.model"]}
+        if revision:
+            download_kwargs["revision"] = revision
 
-    def _load_and_convert(self, hf_path: Path, model_path: Path, tokenizer: Any):
-        """Load from HF, convert to MLX, and save."""
-        # 1. Load the model using the transformers library, ensuring we use its
-        # native floating-point precision to prevent weight corruption.
-        logger.info("Loading full HuggingFace model to synchronize token embeddings...")
-        hf_model = AutoModelForCausalLM.from_pretrained(
-            str(hf_path), trust_remote_code=True, dtype="auto"
+        hf_path = Path(snapshot_download(**download_kwargs))
+
+        # Copy to our cache (simplified - just copy the necessary files)
+        self._cache_model_files(hf_path, cached_path)
+        print("hello I am here")
+
+        # Load directly to MLX format in memory (exactly like working example)
+        return self._load_hf_model_to_mlx(cached_path, tokenizer_config)
+
+    def _load_hf_model_to_mlx(self, hf_path: Path, tokenizer_config=None) -> BaseModel:
+        logger.info("Entering MLXModelLoader._load_hf_model_to_mlx")
+        """Load HF model directly to MLX format (exactly like working example)."""
+        if tokenizer_config is None:
+            tokenizer_config = {}
+        # 1. Load config (exactly like working example)
+        with open(hf_path / "config.json") as f:
+            config_dict = json.load(f)
+            logger.info("config_dict valuesx:")
+            for k, v in config_dict.items():
+                logger.info(f"  {k}: {v}")
+
+        config = ModelConfig.from_huggingface(config_dict)
+        # 2. Load weights from safetensors (exactly like working example)
+        import glob
+        weight_files = glob.glob(str(hf_path / "*.safetensors"))
+        if len(weight_files) == 0:
+            raise FileNotFoundError(f"No safetensors found in {hf_path}")
+
+        weights = {}
+        assert mx is not None
+        for wf in weight_files:
+            # Load weights and convert to bfloat16 (like MLX LoRA examples)
+            loaded_weights = mx.load(wf)
+            # Convert all weights to bfloat16 for efficiency (matching MLX examples)
+            converted_weights = {k: v.astype(mx.bfloat16) if hasattr(v, 'astype') else v
+                               for k, v in loaded_weights.items()}
+            weights.update(converted_weights.items())
+
+        # 3. Create model and load weights (exactly like working example)
+        model = get_mlx_model(config)
+        model.load_weights(list(weights.items()))
+        mx.eval(model.parameters())
+        logger.info("=" * 30 + " Model Parameters " + "=" * 28)
+
+        def print_params(params, prefix=""):
+            for name, value in params.items():
+                full_name = f"{prefix}.{name}" if prefix else name
+                if isinstance(value, dict):
+                    print_params(value, full_name)
+                elif hasattr(value, "shape"):
+                    shape_str = str(value.shape)
+                    dtype_str = str(value.dtype)
+                    log_line = f"{full_name:<50} | Shape: {shape_str:<20} | Dtype: {dtype_str}"
+                    logger.info(log_line)
+
+        print_params(model.parameters())
+        logger.info("=" * 80)
+
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_path, **tokenizer_config
         )
 
-        # 2. Resize embedding matrix if tokenizer has extra tokens
-        if tokenizer and len(tokenizer) > hf_model.config.vocab_size:
-            logger.info(
-                f"Resizing embedding matrix from {hf_model.config.vocab_size} to {len(tokenizer)}"
-            )
-            hf_model.resize_token_embeddings(len(tokenizer))
+        return model, tokenizer, config
 
-        # 3. Convert and save weights
-        self._convert_and_save_weights(hf_model, model_path)
-
-        # 4. Load the converted model
-        return self.load_from_path(model_path, tokenizer=tokenizer)
-
-    def _convert_and_save_weights(self, hf_model: Any, model_path: Path):
-        """Convert and save PyTorch weights to MLX-compatible NPZ format."""
-        # Ensure the model path exists
-        model_path.mkdir(parents=True, exist_ok=True)
-
-        # Get PyTorch state dict and MLX model config
-        source_weights = hf_model.state_dict()
-        config = ModelConfig.from_huggingface(hf_model.config.to_dict())
-
-        # Convert weights
-        mlx_weights = self.convert_weights(source_weights, config)
-
-        # Validate we have weights to save
-        if not mlx_weights:
-            raise ValueError(
-                "No weights were converted - this indicates a critical conversion failure"
-            )
-
-        logger.info(f"Converted {len(mlx_weights)} weight tensors for saving")
-
-        # Save weights and config
-        np.savez(str(model_path / "weights.npz"), **mlx_weights)
-        with open(model_path / "config.json", "w") as f:
-            json.dump(config.to_dict(), f, indent=4)
-
-        logger.info(f"Saved model weights and config to {model_path}")
-
-    def load_from_path(self, path: Path, tokenizer=None) -> BaseModel:
-        """Load a model from local path."""
+    def load_from_path(self, path: Path, tokenizer_config: dict | None = None) -> tuple:
+        logger.info("Entering MLXModelLoader.load_from_path")
+        """Load a model from local path using simplified approach."""
         path = Path(path)
 
-        # Check if it's our converted MLX model format
-        if (path / "weights.npz").exists() and (path / "config.json").exists():
-            model = self._load_model_from_npz(path)
-            # Only evaluate a subset of parameters to avoid hanging on large models
-            params = model.parameters()
-            if isinstance(params, dict) and params:
-                # Just evaluate one parameter to ensure weights are loaded
-                first_param = next(iter(params.values()))
-                mx.eval(first_param)
-            logger.debug("Model weights evaluation completed")
-            return model
+        # Check if this is a HuggingFace model directory with safetensors
+        if (path / "config.json").exists():
+            import glob
+            safetensors_files = glob.glob(str(path / "*.safetensors"))
+            if safetensors_files:
+                # Use simplified loading (same as _load_hf_model_to_mlx)
+                return self._load_hf_model_to_mlx(path, tokenizer_config)
 
-        # Otherwise, assume it's a raw HuggingFace model and convert it
-        return self._load_and_convert(path, path, tokenizer)
+        raise FileNotFoundError(f"No valid model found at {path}")
 
-    def _load_model_from_npz(self, model_path: Path) -> BaseModel:
-        """Load model weights from NPZ file and config."""
-        # Load config
-        with open(model_path / "config.json") as f:
-            config = ModelConfig(**json.load(f))
+    def _get_cached_path(
+        self, model_id: str, revision: str | None, tokenizer_config: dict | None = None
+    ) -> Path:
+        logger.info("Entering MLXModelLoader._get_cached_path")
+        """Get cache path for a model."""
+        safe_model_id = model_id.replace("/", "--")
+        if revision:
+            safe_model_id = f"{safe_model_id}--{revision}"
+        return self.cache_dir / safe_model_id
 
-        # Create MLX model
-        model = get_mlx_model(config)
+    def _cache_model_files(self, hf_path: Path, cached_path: Path):
+        logger.info("Entering MLXModelLoader._cache_model_files")
+        """Copy necessary model files to our cache."""
+        import shutil
 
-        # Load and set weights
-        npz_weights = np.load(str(model_path / "weights.npz"))
-        if len(npz_weights) == 0:
-            raise ValueError(f"No weights found in {model_path / 'weights.npz'}")
+        cached_path.mkdir(parents=True, exist_ok=True)
 
-        weights = {k: mx.array(v) for k, v in npz_weights.items()}
-        nested_weights = self._unflatten_weights(weights)
+        # Copy config file
+        if (hf_path / "config.json").exists():
+            shutil.copy2(hf_path / "config.json", cached_path / "config.json")
 
-        logger.info(f"Loading {len(weights)} weight tensors from NPZ file")
-        model.update(nested_weights)
+        # Copy safetensors files
+        import glob
+        for safetensors_file in glob.glob(str(hf_path / "*.safetensors")):
+            filename = Path(safetensors_file).name
+            shutil.copy2(safetensors_file, cached_path / filename)
 
-        # Critical: Ensure weights are properly evaluated and loaded (but avoid hanging)
-        params = model.parameters()
-        if isinstance(params, dict) and params:
-            # Just evaluate one parameter to ensure weights are loaded
-            first_param = next(iter(params.values()))
-            mx.eval(first_param)
-            logger.debug("Model parameter evaluation completed")
+        # Copy tokenizer files
+        for tokenizer_file in ["tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt", "special_tokens_map.json", "tokenizer.model"]:
+            if (hf_path / tokenizer_file).exists():
+                shutil.copy2(hf_path / tokenizer_file, cached_path / tokenizer_file)
 
-        # Validate model has parameters using MLX flatten_params
-        try:
-            # Import flatten_params from mlx_models
-            from finetune.models.mlx_models import flatten_params
+        logger.info(f"Cached model files to {cached_path}")
 
-            flat_params = flatten_params(model.parameters())
-            param_count = sum(p.size for p in flat_params.values() if hasattr(p, "size"))
-
-            if param_count == 0:
-                raise ValueError("Model loaded with 0 parameters - weight loading failed")
-
-            logger.info(f"Model loaded successfully with {param_count:,} parameters")
-        except Exception as e:
-            logger.warning(f"Could not count parameters: {e}")
-            # Don't fail loading, just warn
-        return model
+# Note: Redundant _load_model_from_safetensors removed - _load_hf_model_to_mlx does the same thing
 
     def _load_pytorch_weights(self, path: Path) -> dict[str, Any]:
+        logger.info("Entering MLXModelLoader._load_pytorch_weights")
         """Load weights from Hugging Face standard formats.
 
         Prioritizes Safetensors (current standard) with fallback to PyTorch .bin format.
@@ -257,31 +243,15 @@ class MLXModelLoader(ModelLoader):
 
         return weights
 
-    def convert_weights(self, source_weights: dict, config: ModelConfig) -> dict[str, mx.array]:
-        """
-        Convert PyTorch weights to MLX.
+    def convert_weights(self, source_weights: dict, config: ModelConfig = None) -> "dict[str, mx.array]":
+        logger.info("Entering MLXModelLoader.convert_weights")
+        """Convert weights (not used in simplified approach - mx.load() handles conversion)."""
+        # This method is required by the abstract base class but not used
+        # in our simplified approach since mx.load() handles conversion automatically
+        return source_weights
 
-        This version uses a simple string replacement, which is robust under the
-        assumption that the layer names in the MLX model directly correspond
-        to the layer names in the Hugging Face model, with the exception of a
-        'model.' prefix on the latter.
-        """
-        mlx_weights = {}
-        for pt_name, pt_tensor in source_weights.items():
-            mlx_name = pt_name
-            if mlx_name.startswith("model."):
-                mlx_name = mlx_name.replace("model.", "", 1)
-
-            mlx_weights[mlx_name] = self._to_mlx(pt_tensor)
-
-        return mlx_weights
-
-    def _to_mlx(self, arr: torch.Tensor) -> mx.array:
-        """Convert a PyTorch tensor to an MLX array."""
-        # NumPy does not support bfloat16, so we must cast to a supported type first.
-        return mx.array(arr.to(torch.float32).numpy())
-
-    def _unflatten_weights(self, weights: dict[str, mx.array]) -> dict:
+    def _unflatten_weights(self, weights: "dict[str, mx.array]") -> dict:
+        logger.info("Entering MLXModelLoader._unflatten_weights")
         """Helper to convert flat weight dict to nested dict for MLX."""
         nested = {}
         for key, value in weights.items():
@@ -295,6 +265,7 @@ class MLXModelLoader(ModelLoader):
         return nested
 
     def _get_name_mapping(self, model_type: str) -> dict[str, str]:
+        logger.info("Entering MLXModelLoader._get_name_mapping")
         """Get weight name mapping for different model types."""
 
         if "llama" in model_type.lower():
@@ -349,6 +320,7 @@ class MLXModelLoader(ModelLoader):
     def _should_skip_weight(
         self, name: str, config: ModelConfig, tokenizer_provided: bool = False
     ) -> bool:
+        logger.info("Entering MLXModelLoader._should_skip_weight")
         """Check if weight should be skipped."""
         # Skip lm_head if it's tied to the embedding layer's weights
         if "lm_head.weight" in name and config.tie_word_embeddings and not tokenizer_provided:
@@ -365,6 +337,7 @@ class MLXModelLoader(ModelLoader):
         return any(pattern in name for pattern in skip_patterns)
 
     def _handle_special_weights(self, name: str, weight: Any, model_type: str) -> Any:
+        logger.info("Entering MLXModelLoader._handle_special_weights")
         """Handle special weight conversions."""
         # FIXED: Removed transpose operation that was causing shape mismatch
         # Modern safetensors weights are already in the correct shape (out_features, in_features)
@@ -372,30 +345,19 @@ class MLXModelLoader(ModelLoader):
         return weight
 
     def _quantize_model(self, model: BaseModel, bits: int) -> BaseModel:
+        logger.info("Entering MLXModelLoader._quantize_model")
         """Apply quantization to the model."""
         nn.QuantizedLinear.quantize_module(model, bits)
 
-    def _get_cached_path(
-        self, model_id: str, revision: str | None, tokenizer: Any | None = None
-    ) -> Path:  # CHANGED: Added tokenizer
-        """Get cache path for a model, making it unique for different vocab sizes."""
-        safe_model_id = model_id.replace("/", "--")
-        if revision:
-            safe_model_id = f"{safe_model_id}--{revision}"
-
-        # CHANGED: This block is new. It makes the cache path unique to the vocab size.
-        if tokenizer:
-            vocab_size = len(tokenizer)
-            safe_model_id = f"{safe_model_id}--vocab{vocab_size}"
-
-        return self.cache_dir / safe_model_id
 
     def save_model(self, model: BaseModel, path: Path):
+        logger.info("Entering MLXModelLoader.save_model")
         """Save MLX model to disk."""
         model.save(path)
         logger.info(f"Model saved to {path}")
 
     def get_model_info(self, model: BaseModel) -> dict[str, Any]:
+        logger.info("Entering MLXModelLoader.get_model_info")
         """Get information about a model."""
         return {
             "type": model.config.model_type,

@@ -93,7 +93,7 @@ def get_project_root() -> Path:
     current = Path.cwd()
 
     # Look for markers of project root
-    markers = ["train.yml", ".finetune", "pyproject.toml", ".git"]
+    markers = ["config/train.yml", ".finetune", "pyproject.toml", ".git"]
 
     while current != current.parent:
         for marker in markers:
@@ -132,7 +132,7 @@ def load_config(config_path: Path | None = None) -> dict:
     import yaml
 
     if config_path is None:
-        config_path = get_project_root() / "train.yml"
+        config_path = get_project_root() / "config/train.yml"
 
     if not config_path.exists():
         return {}
@@ -149,7 +149,7 @@ def save_config(config: dict, config_path: Path | None = None) -> None:
     import yaml
 
     if config_path is None:
-        config_path = get_project_root() / "train.yml"
+        config_path = get_project_root() / "config/train.yml"
 
     try:
         with open(config_path, "w") as f:

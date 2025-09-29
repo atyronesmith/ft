@@ -11,12 +11,7 @@ import pytest
 
 from finetune.training.lora import (
     LoRAConfig,
-)
-from finetune.training.lora import (
     LoRALinear as MLXLoRALinear,  # Alias for consistency with test names
-)
-from finetune.training.lora import (
-    ,
 )
 
 
@@ -81,9 +76,9 @@ class TestMLXLoRALinear:
         assert hasattr(layer, "lora_a")
         assert hasattr(layer, "lora_b")
 
-        # Check parameter shapes
-        assert layer.lora_a.shape == (rank, in_features)
-        assert layer.lora_b.shape == (out_features, rank)
+        # Check parameter shapes (MLX examples pattern)
+        assert layer.lora_a.shape == (in_features, rank)
+        assert layer.lora_b.shape == (rank, out_features)
         assert layer.base.weight.shape == (out_features, in_features)
 
     def test_lora_layer_forward_pass(self):
@@ -99,9 +94,9 @@ class TestMLXLoRALinear:
         # Assert
         assert output.shape == (2, 512)
 
-        # Verify it's base + lora adaptation with scaling
+        # Verify it's base + lora adaptation with scaling (MLX examples pattern)
         base_output = layer.base(x)
-        lora_output = x @ layer.lora_a.T @ layer.lora_b.T * config.scaling
+        lora_output = (x @ layer.lora_a) @ layer.lora_b * config.scaling
         expected = base_output + lora_output
 
         assert mx.allclose(output, expected, atol=1e-6)
@@ -176,9 +171,9 @@ class TestMLXLoRALinear:
             actual_params = layer.lora_a.size + layer.lora_b.size
             assert actual_params == expected_params
 
-            # Check shapes
-            assert layer.lora_a.shape == (rank, 64)
-            assert layer.lora_b.shape == (64, rank)
+            # Check shapes (MLX examples pattern)
+            assert layer.lora_a.shape == (64, rank)
+            assert layer.lora_b.shape == (rank, 64)
 
 
 class TestLoRAAdapterApplication:

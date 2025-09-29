@@ -6,7 +6,6 @@ import math
 from pathlib import Path
 
 try:
-    import mlx
     import mlx.core as mx
     import mlx.nn as nn
 
@@ -41,22 +40,19 @@ if MLX_AVAILABLE:
             self.eps = eps
 
         def __call__(self, x):
-            # HuggingFace-compatible RMSNorm implementation
-            # Exact match to LlamaRMSNorm.forward()
-            input_dtype = x.dtype
-            x_float32 = x.astype(mx.float32)
+            # Pure bfloat16 RMSNorm for memory efficiency (MLX examples pattern)
+            # Keep everything in bfloat16 to avoid unnecessary conversions
 
             # Compute variance: mean of squares along last dimension
             # HF: hidden_states.pow(2).mean(-1, keepdim=True)
-            variance = mx.mean(mx.square(x_float32), axis=-1, keepdims=True)
+            variance = mx.mean(mx.square(x), axis=-1, keepdims=True)
 
             # Normalize: x * rsqrt(variance + eps)
             # HF: hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-            normalized = x_float32 * mx.rsqrt(variance + self.eps)
+            normalized = x * mx.rsqrt(variance + self.eps)
 
-            # Apply weight AFTER converting back to input dtype (HF order)
-            # HF: self.weight * hidden_states.to(input_dtype)
-            return self.weight * normalized.astype(input_dtype)
+            # Apply weight in same dtype (bfloat16)
+            return self.weight * normalized
 
     class Attention(nn.Module):
         """Multi-head attention for MLX."""
@@ -69,7 +65,6 @@ if MLX_AVAILABLE:
             self.num_key_value_heads = config.num_key_value_heads or self.num_heads
             self.num_key_value_groups = self.num_heads // self.num_key_value_heads
             self.rope_theta = config.rope_theta
-
             self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
             self.k_proj = nn.Linear(
                 self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
@@ -229,6 +224,10 @@ if MLX_AVAILABLE:
 
             return logits, new_cache
 
+        def __call__(self, input_ids: mx.array, cache: list | None = None, **kwargs) -> tuple[mx.array, list]:
+            """Call method to make the model callable like MLX examples."""
+            return self.forward(input_ids, cache=cache, **kwargs)
+
         def generate(
             self,
             input_ids: mx.array,
@@ -300,14 +299,14 @@ if MLX_AVAILABLE:
                         weights[prefix + k] = v
 
             flatten_params(dict(self.parameters()))
-            mx.savez(str(path / "model.npz"), **weights)
+            mx.save_safetensors(str(path / "model.safetensors"), weights, metadata={"format": "mlx"})
 
         def load(self, path: Path):
             """Load model from disk."""
             path = Path(path)
 
             # Load weights from MLX native format
-            flat_weights = mx.load(str(path / "model.npz"))
+            flat_weights = mx.load(str(path / "model.safetensors"))
 
             # Unflatten weights back to nested structure
             weights = {}
@@ -497,7 +496,7 @@ if MLX_AVAILABLE:
             h = token_embeddings + position_embeddings
 
             # Pass through transformer blocks
-            for i, layer in enumerate(self.layers):
+            for layer in self.layers:
                 h = layer(h)
 
             # Final layer norm
@@ -582,7 +581,7 @@ if MLX_AVAILABLE:
 
                 def count_params(params):
                     nonlocal total
-                    for k, v in params.items():
+                    for v in params.items():
                         if isinstance(v, dict):
                             count_params(v)
                         elif isinstance(v, list):

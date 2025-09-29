@@ -31,9 +31,8 @@ def compare_attention_mechanism():
         # Load both models
         print(f"Loading models: {model_id}")
         manager = ModelManager()
-        mlx_model = manager.load_model(model_id)
+        mlx_model, tokenizer, _ = manager.load_model(model_id)
         hf_model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
 
         # Set both models to eval mode
         mlx_model.eval()

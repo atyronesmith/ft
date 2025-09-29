@@ -84,7 +84,7 @@ Benchmarking & Methodology:
    └── Split train/validation
 
 3. Configuration
-   ├── Edit train.yml
+   ├── Edit config/train.yml
    ├── Set secrets in passwords.yml
    ├── Choose optimization method
    └── Set resource limits
@@ -169,7 +169,7 @@ ft init                           # Initialize project
 ft models list                     # Browse available models
 ft models pull llama-3.2-3b       # Download model
 ft dataset prepare data.json      # Prepare dataset
-ft train                           # Start training with train.yml
+ft train                           # Start training with config/train.yml
 ft evaluate --checkpoint best      # Run evaluation
 ft export --format gguf           # Export model
 ft serve --port 8000              # Launch inference server
@@ -304,7 +304,7 @@ ft train start microsoft/DialoGPT-small data/training.json \
 
 ## Configuration Strategy
 
-### Primary Configuration (train.yml)
+### Primary Configuration (config/train.yml)
 All training parameters in a single top-level file:
 - Model selection and settings
 - Dataset paths and preprocessing
@@ -324,7 +324,7 @@ Separate file for sensitive information:
 
 1. **MLX-First Approach**: Leverage Apple's framework for optimal M4 performance
 2. **Modular Architecture**: Plugin system for datasets, models, and training methods
-3. **Simple Configuration**: Single train.yml for all parameters, separate passwords.yml for secrets
+3. **Simple Configuration**: Single config/train.yml for all parameters, separate passwords.yml for secrets
 4. **Progressive Disclosure**: Simple defaults with advanced options available
 5. **Offline-First**: Full functionality without internet after initial model download
 6. **Resource-Aware**: Automatic adaptation to available memory and compute

@@ -40,30 +40,30 @@ class ModelManager:
         load_in_4bit: bool = False,
         load_in_8bit: bool = False,
         device_map: str | None = None,
-        tokenizer=None,
+        tokenizer_config: dict | None = None,
         **kwargs,
-    ) -> BaseModel:
+    ) -> tuple[BaseModel, Any, Any]:
         """Load a model from HuggingFace or local path."""
         logger.info(f"Loading model: {model_id}")
 
         # Check if it's a local path
         if Path(model_id).exists():
-            model = self.loader.load_from_path(Path(model_id), tokenizer=tokenizer)
+            model, tokenizer, config = self.loader.load_from_path(Path(model_id), tokenizer_config)
             model_name = Path(model_id).name
         else:
             # Load from HuggingFace
-            model = self.loader.load_from_huggingface(
+            model, tokenizer, config = self.loader.load_from_huggingface(
                 model_id,
                 load_in_4bit=load_in_4bit,
                 load_in_8bit=load_in_8bit,
-                tokenizer=tokenizer,
+                tokenizer_config=tokenizer_config,
                 **kwargs,
             )
             model_name = model_id
 
         # Register in database
         model_info = self.loader.get_model_info(model)
-        model_db_id = self.registry.register_model(
+        self.registry.register_model(
             name=model_name,
             path=str(self.cache_dir / model_name.replace("/", "--")),
             source="huggingface" if "/" in model_id else "local",
@@ -73,7 +73,7 @@ class ModelManager:
 
         logger.info(f"Model loaded successfully: {model_info['parameters']:,} parameters")
 
-        return model
+        return model, tokenizer, config
 
     def list_models(self, source: str | None = None) -> list[dict[str, Any]]:
         """List available models."""
@@ -153,7 +153,7 @@ class ModelManager:
         # Get file list
         files = [str(f.relative_to(model_path)) for f in model_path.iterdir() if f.is_file()]
 
-        return {
+        model_info = {
             "name": model_name,
             "path": str(model_path),
             "config": config_data,
@@ -166,6 +166,9 @@ class ModelManager:
             "num_heads": config_data.get("num_attention_heads"),
         }
 
+        print(model_info)
+        return model_info
+
     def convert_model(
         self, model_name: str, output_format: str, output_path: Path | None = None
     ) -> Path:
@@ -173,7 +176,7 @@ class ModelManager:
         logger.info(f"Converting {model_name} to {output_format}")
 
         # Load model
-        model = self.load_model(model_name)
+        model, _, _ = self.load_model(model_name)
 
         output_path = output_path or self.cache_dir / f"{model_name}_{output_format}"
 

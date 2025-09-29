@@ -34,8 +34,8 @@ def init():
         Path(dir_name).mkdir(exist_ok=True)
 
     # Create default config if it doesn't exist
-    if not Path("train.yml").exists():
-        console.print("Creating default train.yml configuration...")
+    if not Path("config/train.yml").exists():
+        console.print("Creating default config/train.yml configuration...")
         # Copy from template or create basic config
 
     console.print("[bold green]✓[/bold green] Project initialized successfully!")

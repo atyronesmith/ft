@@ -94,11 +94,10 @@ def pull(
         ) as progress:
             task = progress.add_task("Downloading model...", total=None)
 
-            model = model_manager.load_model(
+            model, _, _ = model_manager.load_model(
                 model_name,
                 load_in_4bit=load_in_4bit,
                 load_in_8bit=load_in_8bit,
-                revision=revision,
             )
 
             progress.update(task, completed=True)

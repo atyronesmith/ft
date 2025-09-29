@@ -2,7 +2,7 @@
 Test-driven development for configuration system.
 
 Tests are written first to drive the implementation of configuration
-management including train.yml, profiles, and validation.
+management including config/train.yml, profiles, and validation.
 """
 
 import os

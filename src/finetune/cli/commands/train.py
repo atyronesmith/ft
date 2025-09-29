@@ -29,6 +29,28 @@ app = typer.Typer()
 console = Console()
 
 
+def _detect_data_format(dataset_path: Path, format_override: Optional[str] = None) -> str:
+    """Detect and display data format information."""
+    if format_override:
+        return f"{format_override} format (override)"
+
+    try:
+        import json
+        with open(dataset_path, 'r') as f:
+            first_line = f.readline().strip()
+            if first_line:
+                data = json.loads(first_line)
+                if "messages" in data:
+                    return "chat message format (auto-detected)"
+                elif "text" in data:
+                    return "MLX text format (auto-detected)"
+                else:
+                    return "unknown format"
+    except Exception:
+        pass
+    return "unknown format"
+
+
 @app.command()
 def start(
     model: str = typer.Argument(..., help="Model name or path"),
@@ -45,6 +67,7 @@ def start(
     template: str = typer.Option(
         "alpaca", "--template", "-t", help="Prompt template (alpaca, chatml, llama)"
     ),
+    data_format: Optional[str] = typer.Option(None, "--format", help="Data format override (chat, mlx, auto)"),
     epochs: int = typer.Option(3, "--epochs", "-e", help="Number of training epochs"),
     batch_size: int = typer.Option(2, "--batch-size", "-b", help="Training batch size"),
     learning_rate: float = typer.Option(2e-4, "--lr", help="Learning rate"),
@@ -65,6 +88,10 @@ def start(
     if not dataset.exists():
         console.print(f"[red]❌ Dataset not found: {dataset}[/red]")
         raise typer.Exit(1)
+
+    # Display data format info
+    format_info = _detect_data_format(dataset, data_format)
+    console.print(f"[blue]📊 Dataset format: {format_info}[/blue]")
 
     try:
         # Create or load configuration
@@ -165,19 +192,48 @@ def _display_results(results: dict) -> None:
 @app.command()
 def quick(
     model: str = typer.Argument(..., help="Model name"),
-    dataset: Path = typer.Argument(..., help="Path to training dataset"),
-    template: str = typer.Option("alpaca", "--template", "-t", help="Prompt template"),
+    dataset: Optional[Path] = typer.Argument(None, help="Path to training dataset (default: WikiSQL examples)"),
+    template: str = typer.Option("alpaca", "--template", "-t", help="Prompt template (alpaca, chatml, llama)"),
+    data_format: Optional[str] = typer.Option(None, "--format", help="Data format override (chat, mlx, auto)"),
     output_dir: Path = typer.Option(
         Path("./quick_output"), "--output", "-o", help="Output directory"
     ),
 ):
-    """Quick training run with minimal configuration."""
+    """Quick training run with minimal configuration.
+
+    Uses WikiSQL examples by default for quick testing and validation.
+    Supports both chat message format and MLX text format with auto-detection.
+    """
 
     console.print("[bold cyan]⚡ Quick Fine-Tuning[/bold cyan]")
+
+    # Handle default dataset
+    if dataset is None:
+        # Use WikiSQL as default, choosing format based on template
+        script_dir = Path(__file__).parent.parent.parent.parent.parent  # Go to project root
+        if template in ["chatml", "llama"]:
+            default_dataset = script_dir / "data" / "datasets" / "training" / "wikisql" / "wikisql_chat_format.jsonl"
+        else:
+            default_dataset = script_dir / "data" / "datasets" / "training" / "wikisql" / "wikisql_mlx_format.jsonl"
+
+        if default_dataset.exists():
+            dataset = default_dataset
+            console.print("[blue]📊 Using default WikiSQL dataset[/blue]")
+        else:
+            console.print("[yellow]⚠️  Default WikiSQL dataset not found, please specify dataset path[/yellow]")
+            console.print("Available example datasets:")
+            console.print("  data/datasets/training/wikisql/wikisql_chat_format.jsonl (for chatml/llama templates)")
+            console.print("  data/datasets/training/wikisql/wikisql_mlx_format.jsonl (for alpaca template)")
+            console.print("  data/datasets/training/chat/general_conversation.jsonl")
+            console.print("  data/datasets/training/instruction/simple_instructions.jsonl")
+            raise typer.Exit(1)
 
     if not dataset.exists():
         console.print(f"[red]❌ Dataset not found: {dataset}[/red]")
         raise typer.Exit(1)
+
+    # Display data format info
+    format_info = _detect_data_format(dataset, data_format)
 
     try:
         # Create quick workflow
@@ -189,7 +245,7 @@ def quick(
         )
 
         console.print(f"[blue]🚀 Starting quick training: {model}[/blue]")
-        console.print(f"[blue]📊 Dataset: {dataset}[/blue]")
+        console.print(f"[blue]📊 Dataset: {dataset} ({format_info})[/blue]")
         console.print(f"[blue]🎨 Template: {template}[/blue]")
         console.print()
 
@@ -243,3 +299,66 @@ def validate(
     except Exception as e:
         console.print(f"[red]❌ Configuration validation failed: {e}[/red]")
         raise typer.Exit(1)
+
+
+@app.command("list-data")
+def list_data():
+    """List available example training datasets."""
+
+    console.print("[bold cyan]📊 Available Training Datasets[/bold cyan]")
+    console.print()
+
+    script_dir = Path(__file__).parent.parent.parent.parent.parent  # Go to project root
+    data_dir = script_dir / "data"
+
+    if not data_dir.exists():
+        console.print("[yellow]⚠️  Data directory not found. Create it with example datasets.[/yellow]")
+        return
+
+    # WikiSQL datasets
+    console.print("[bold]📚 WikiSQL (Database Q&A)[/bold]")
+    wikisql_chat = data_dir / "datasets" / "training" / "wikisql" / "wikisql_chat_format.jsonl"
+    wikisql_mlx = data_dir / "datasets" / "training" / "wikisql" / "wikisql_mlx_format.jsonl"
+
+    if wikisql_chat.exists():
+        console.print(f"  ✅ {wikisql_chat} (chat format - use with chatml/llama templates)")
+    else:
+        console.print(f"  ❌ {wikisql_chat} (not found)")
+
+    if wikisql_mlx.exists():
+        console.print(f"  ✅ {wikisql_mlx} (MLX format - use with alpaca template)")
+    else:
+        console.print(f"  ❌ {wikisql_mlx} (not found)")
+
+    console.print()
+
+    # Chat datasets
+    console.print("[bold]💬 Conversational[/bold]")
+    chat_file = data_dir / "chat" / "general_conversation.jsonl"
+    if chat_file.exists():
+        console.print(f"  ✅ {chat_file} (chat format)")
+    else:
+        console.print(f"  ❌ {chat_file} (not found)")
+
+    console.print()
+
+    # Instruction datasets
+    console.print("[bold]📝 Instruction Following[/bold]")
+    instruction_file = data_dir / "instruction" / "simple_instructions.jsonl"
+    if instruction_file.exists():
+        console.print(f"  ✅ {instruction_file} (MLX text format)")
+    else:
+        console.print(f"  ❌ {instruction_file} (not found)")
+
+    console.print()
+
+    # Usage examples
+    console.print("[bold]🚀 Usage Examples[/bold]")
+    console.print("  # Use default WikiSQL:")
+    console.print("  ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    console.print()
+    console.print("  # Use specific dataset:")
+    console.print("  ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0 data/datasets/training/chat/general_conversation.jsonl")
+    console.print()
+    console.print("  # Use with specific template:")
+    console.print("  ft train quick TinyLlama/TinyLlama-1.1B-Chat-v1.0 --template chatml")

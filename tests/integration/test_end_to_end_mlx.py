@@ -82,7 +82,7 @@ pytestmark = [
 def _load_fixed_dataset(path: Path, n: int = 100):
     """Load fixed training dataset and optionally subset it for testing."""
     # Load from the fixed training data file
-    training_data_path = Path(__file__).parent.parent.parent / "training-data" / "train.json"
+    training_data_path = Path(__file__).parent.parent.parent / "training_data" / "train.json"
 
     if not training_data_path.exists():
         raise FileNotFoundError(
@@ -387,13 +387,15 @@ def _train_with_workflow(
     test_questions: list = None,
     expected_answers: list = None,
     training_config: dict = None,
+    train_data: list = None,
+    val_data: list = None,
 ):
     """Train quickly using internal workflow APIs, MLX-first if available."""
     _vprint(f"Init workflow | model={model_id} | train_file={train_file} | out_dir={out_dir}")
     workflow = create_quick_workflow(
         model_name=model_id,
         data_file=str(train_file),
-        template="tinyllama",  # Use TinyLlama's native template format
+        template="chatml",  # Use ChatML template for chat data format
         output_dir=str(out_dir),
     )
 
@@ -413,14 +415,16 @@ def _train_with_workflow(
     workflow.config.lora.r = 8  # Give LoRA more capacity to learn
     workflow.config.lora.alpha = 16  # Standard practice: 2 * r
 
-    _vprint("Preparing dataset...")
-    workflow.prepare_dataset()
-    # Load model with native tokenizer (no vocabulary expansion)
+    # Load model with native tokenizer (no vocabulary expansion) FIRST
+    _vprint("Loading model and tokenizer...")
     workflow.model, workflow.tokenizer, _ = workflow.model_manager.load_model(
         model_id,
         tokenizer_config={},
         load_in_4bit=workflow.config.model.load_in_4bit,
     )
+
+    _vprint("Preparing dataset...")
+    workflow.prepare_dataset()
 
     # Store native tokenizer for training
     _vprint(f"✅ Model loaded with native vocabulary: {len(workflow.tokenizer.get_vocab())} tokens")
@@ -477,11 +481,18 @@ def _train_with_workflow(
             _vprint(f"Tokenizer vocab size: {vocab_size}")
 
             for i, example in enumerate(examples):
-                # Use the full messages conversation format for proper chat training
-                messages = example["messages"]  # Full conversation with system/user/assistant
+                # Support both formats: chat format with "messages" and MLX example format with "text"
+                if "messages" in example:
+                    # Use the full messages conversation format for proper chat training
+                    messages = example["messages"]  # Full conversation with system/user/assistant
 
-                # Use centralized common utilities for consistency
-                training_text = apply_chat_template_with_tokenizer(tok, messages, for_training=True)
+                    # Use centralized common utilities for consistency
+                    training_text = apply_chat_template_with_tokenizer(tok, messages, for_training=True)
+                elif "text" in example:
+                    # MLX example format - use the text directly
+                    training_text = example["text"]
+                else:
+                    raise ValueError(f"Example {i} has neither 'messages' nor 'text' key: {list(example.keys())}")
 
                 # Tokenize using TinyLlama's chat template (matching successful baseline)
                 enc = tok.encode(training_text, return_tensors="np")[0]
@@ -598,8 +609,21 @@ def _train_with_workflow(
 
             return batches
 
-        tokenized_train = _tok_batch(workflow.train_dataset)
-        tokenized_eval = _tok_batch(workflow.eval_dataset) if workflow.eval_dataset else None
+        # Use the original training data instead of the processed workflow dataset
+        # workflow.train_dataset has been processed and no longer has the original format
+        # that _tok_batch expects (it has input_ids/labels instead of messages/text)
+        if train_data:
+            dataset_size = training_config["dataset_size"]
+            tokenized_train = _tok_batch(train_data[:dataset_size])
+        else:
+            tokenized_train = _tok_batch(workflow.train_dataset)
+
+        if val_data:
+            val_size = max(5, training_config["dataset_size"] // 10)
+            val_data_subset = val_data[:val_size]
+            tokenized_eval = _tok_batch(val_data_subset)
+        else:
+            tokenized_eval = _tok_batch(workflow.eval_dataset) if workflow.eval_dataset else None
         workflow.trainer.train_dataset = tokenized_train
         workflow.trainer.eval_dataset = tokenized_eval
 
@@ -785,7 +809,7 @@ def test_end_to_end_mlx(tmp_path: Path):
 
     # 3) Fine-tune (LoRA) using internal workflow (MLX-first)
     workflow, losses, baseline_results = _train_with_workflow(
-        MODEL_ID, train_file, out_dir, test_questions, expected_answers, training_config
+        MODEL_ID, train_file, out_dir, test_questions, expected_answers, training_config, train_data, val_data
     )
     # Best-effort artifact to ensure downstream tooling sees outputs even if training fails upstream
     # Create a simple log with minimal metadata

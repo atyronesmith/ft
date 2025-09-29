@@ -76,7 +76,7 @@ src/finetune/data/
 ### 3. **Configuration System** (Week 4)
 ```python
 # Primary training configuration
-configs/train.yml     # Single file for all training parameters
+configs/config/train.yml     # Single file for all training parameters
 configs/profiles/     # Preset configurations for common scenarios
 ├── chat.yml         # Chat model fine-tuning
 ├── instruction.yml  # Instruction following
@@ -86,7 +86,7 @@ configs/profiles/     # Preset configurations for common scenarios
 
 **Configuration Structure:**
 ```yaml
-# train.yml example
+# config/train.yml example
 model:
   name: "meta-llama/Llama-2-7b-hf"
   backend: "auto"  # auto, mlx, pytorch
@@ -129,7 +129,7 @@ src/finetune/cli/commands/
 **CLI Commands:**
 ```bash
 # Core training workflow
-ft train                          # Train with train.yml
+ft train                          # Train with config/train.yml
 ft train --config custom.yml     # Train with custom config
 ft train --model llama-7b --data data.jsonl  # Quick training
 

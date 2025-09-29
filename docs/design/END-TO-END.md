@@ -79,7 +79,7 @@ Validate the full production workflow: model acquisition (with cache), synthetic
 - Validate via `ft dataset info data/train.jsonl` and `ft dataset template --format alpaca`
 
 4) Validate configuration
-- Author `train.yml` with parameters above; run `ft train validate train.yml`
+- Author `config/train.yml` with parameters above; run `ft train validate config/train.yml`
 
 5) Fine-tune (LoRA)
 - `ft train start TinyLlama/TinyLlama-1.1B-Chat-v1.0 data/train.jsonl --template chatml --epochs 2 --batch-size 4 --lora-rank 16 --profile chat`

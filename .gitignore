@@ -224,3 +224,37 @@ passwords.yml
 
 # Training outputs and model files
 /training/
+
+# MLX specific files
+*.npz
+*.npy
+*.mlx
+
+# Additional binary formats
+*.pkl
+*.pickle
+*.joblib
+*.msgpack
+*.feather
+
+# Image files (in case they sneak in)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.tar.bz2
+*.7z
+*.rar
+
+# Development cache
+.cache/
+cache/
+__pycache__/

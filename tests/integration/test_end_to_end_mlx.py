@@ -82,7 +82,7 @@ pytestmark = [
 def _load_fixed_dataset(path: Path, n: int = 100):
     """Load fixed training dataset and optionally subset it for testing."""
     # Load from the fixed training data file
-    training_data_path = Path(__file__).parent.parent.parent / "training_data" / "train.json"
+    training_data_path = Path(__file__).parent.parent.parent / "data" / "cache" / "training_data" / "train.json"
 
     if not training_data_path.exists():
         raise FileNotFoundError(

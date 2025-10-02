@@ -162,7 +162,6 @@ Temporary Items
 
 # Project specific
 /models/
-/data/
 /checkpoints/
 /logs/
 /outputs/
@@ -207,8 +206,77 @@ yarn-error.log*
 *.key
 *.crt
 *.p12
+*.pfx
+*.keystore
+*.jks
 secrets/
 passwords.yml
+
+# API tokens and credentials (comprehensive patterns)
+*.token
+*.tokens
+*_token
+*_tokens
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.test
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+credentials
+credentials.*
+!credentials.example
+!credentials.template
+auth.json
+auth.yml
+auth.yaml
+.secrets
+.credentials
+
+# HuggingFace Hub tokens
+.huggingface/
+hf_token
+hf_*.token
+
+# Cloud provider credentials
+.aws/credentials
+.aws/config
+.azure/
+.gcp/
+google-credentials.json
+service-account*.json
+gcloud-service-key.json
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_dsa
+id_dsa.pub
+id_ecdsa
+id_ecdsa.pub
+id_ed25519
+id_ed25519.pub
+*.ppk
+
+# Certificate files
+*.csr
+*.der
+*.cer
+*.ca-bundle
+*.ca-cert
+
+# Keychain and wallet files
+*.keychain
+*.wallet
+*.dat
+
+# Security scan results
+.gitleaks-report.json
+.truffleHog-report.json
+security-scan*.json
 
 # Large files
 *.h5

@@ -1,0 +1,115 @@
+# GitLeaks Configuration for FineTune Project
+# This file defines allowlist rules to prevent false positive alerts
+# for legitimate placeholder data and example configurations.
+
+[allowlist]
+  description = "FineTune Project Global Allowlist"
+
+  # File paths to ignore - use paths (not files) as recommended by Red Hat InfoSec
+  paths = [
+    # Example and template files
+    '''.*\.example''',
+    '''.*\.template''',
+    '''.*\.sample''',
+
+    # Test data and fixtures
+    '''test.*''',
+    '''tests/.*''',
+    '''fixtures/.*''',
+    '''test_data/.*''',
+    '''examples?/.*''',
+
+    # Documentation that might contain example credentials
+    '''docs?/.*\.md''',
+    '''README.*''',
+    '''.*\.rst''',
+
+    # Configuration templates
+    '''config.*\.example''',
+    '''.*\.example\.ya?ml''',
+    '''.*\.template\.ya?ml''',
+
+    # Common vendor/third-party code directories
+    '''vendor/.*''',
+    '''third_party/.*''',
+    '''node_modules/.*''',
+
+    # Development and temporary files
+    '''\.vscode/.*''',
+    '''\.idea/.*''',
+    '''tmp/.*''',
+    '''temp/.*''',
+  ]
+
+  # Regex patterns to ignore based on line content
+  regexes = [
+    # Placeholder tokens with repeated characters (common false positives)
+    '''[a-zA-Z0-9_]*[xX]{8,}[a-zA-Z0-9_]*''',        # Tokens with 8+ x characters
+    '''[a-zA-Z0-9_]*[*]{8,}[a-zA-Z0-9_]*''',         # Tokens with 8+ asterisks
+    '''[a-zA-Z0-9_]*[-]{8,}[a-zA-Z0-9_]*''',         # Tokens with 8+ dashes
+
+    # Explicit example markers
+    '''.*EXAMPLE.*''',
+    '''.*example.*''',
+    '''.*Example.*''',
+    '''.*placeholder.*''',
+    '''.*PLACEHOLDER.*''',
+    '''.*replace.*me.*''',
+    '''.*REPLACE.*ME.*''',
+    '''.*your.*key.*here.*''',
+    '''.*YOUR.*KEY.*HERE.*''',
+
+    # Common test/demo values
+    '''test[_-]?key''',
+    '''demo[_-]?key''',
+    '''fake[_-]?key''',
+    '''mock[_-]?key''',
+    '''dummy[_-]?key''',
+    '''sample[_-]?key''',
+
+    # HuggingFace specific placeholder patterns
+    '''hf_[xX]{30,}''',                               # HF tokens with x placeholders
+    '''hf_.*example.*''',                             # HF tokens with "example"
+    '''hf_.*placeholder.*''',                         # HF tokens with "placeholder"
+
+    # OpenAI specific placeholder patterns
+    '''sk-[xX]{40,}''',                               # OpenAI keys with x placeholders
+    '''sk-.*example.*''',                             # OpenAI keys with "example"
+
+    # Anthropic specific placeholder patterns
+    '''sk-ant-[xX]{40,}''',                           # Anthropic keys with x placeholders
+
+    # Generic API key placeholder patterns
+    '''.*api.*key.*[xX]{10,}.*''',                    # API keys with x placeholders
+    '''.*secret.*[xX]{10,}.*''',                      # Secrets with x placeholders
+    '''.*token.*[xX]{10,}.*''',                       # Tokens with x placeholders
+
+    # Configuration comments that indicate non-real values
+    '''.*#.*example.*''',
+    '''.*#.*placeholder.*''',
+    '''.*#.*replace.*''',
+    '''.*#.*change.*''',
+    '''.*#.*update.*''',
+    '''.*#.*insert.*''',
+    '''.*//.*example.*''',
+    '''.*//.*placeholder.*''',
+
+    # Common password placeholder patterns
+    '''your.*password.*here''',
+    '''change.*me''',
+    '''replace.*me''',
+    '''insert.*password''',
+    '''super.*secret.*password''',
+
+    # JWT and other structured placeholder patterns
+    '''.*jwt.*secret.*[xX]{10,}.*''',
+    '''.*encryption.*key.*[xX]{10,}.*''',
+
+    # Database connection string placeholders
+    '''.*localhost.*password.*''',
+    '''.*127\.0\.0\.1.*password.*''',
+
+    # Comments containing "notsecret" as recommended by Red Hat InfoSec
+    '''.*notsecret.*''',
+    '''.*not.*secret.*''',
+  ]

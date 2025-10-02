@@ -24,9 +24,6 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-# Add MLX official comparison path for native utilities
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dev", "experiments", "mlx_official_comparison"))
-
 
 def find_most_recent_training_run(base_dir: Path) -> Path | None:
     """Find the most recent training run with a final_model."""
@@ -106,29 +103,29 @@ def detect_lora_config_from_training(training_run_dir: Path) -> dict | None:
 
 
 def load_model_with_lora(base_model_name: str, adapter_path: Path):
-    """Load the base model and apply LoRA weights using MLX-native approach."""
-    # Import MLX native utilities (same as working script)
+    """Load the base model and apply LoRA weights using WORKING tests/lora approach."""
+    # Import the working utilities directly from tests/lora
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tests", "lora"))
     import utils as lora_utils
     from models import LoRALinear
     import mlx.core as mx
     from mlx.utils import tree_flatten
 
-    print(f"🤖 Loading base model using MLX-native approach: {base_model_name}")
+    print(f"🤖 Loading base model using WORKING tests/lora approach: {base_model_name}")
 
-    # Use MLX-native model loading (same as working script)
-    model, tokenizer, config = lora_utils.load(base_model_name)
-
+    # Use the EXACT same loading approach as working script
+    tokenizer_config = {}
+    model, tokenizer, config = lora_utils.load(base_model_name, tokenizer_config)
     print(f"✅ Model loaded with vocabulary: {len(tokenizer.get_vocab())} tokens")
 
-    print("🔧 Adding LoRA layers using MLX-native pattern...")
+    print("🔧 Adding LoRA layers using EXACT working pattern...")
 
     # Freeze entire model first (exactly like working script)
     model.freeze()
 
-    # Apply LoRA to last 16 layers (MLX example default)
+    # Apply LoRA to last 16 layers (EXACT same as working script)
     lora_layers = 16
-
-    # Use same pattern as working script: model.model.layers (not model.layers)
     layers = model.model.layers
     start_layer = len(layers) - lora_layers
 
@@ -149,9 +146,9 @@ def load_model_with_lora(base_model_name: str, adapter_path: Path):
 
     print(f"📥 Loading LoRA weights from: {adapter_path}")
 
-    # Load adapter weights using MLX-native approach (same as working script)
+    # Use EXACT same weight loading as working script (simple and direct)
     model.load_weights(str(adapter_path), strict=False)
-    print("✅ LoRA weights loaded using MLX-native approach")
+    print("✅ LoRA weights loaded using EXACT working approach")
 
     return model, tokenizer
 
@@ -290,8 +287,11 @@ def load_training_data_questions(training_run_path: str = None, use_validation: 
 def generate_answer(
     model, tokenizer, question: str, table_context: str = "", max_tokens: int = 50, debug: bool = True
 ) -> str:
-    """Generate an answer using MLX-native generation approach (same as working script)."""
+    """Generate an answer using EXACT same approach as working tests/lora script."""
     import signal
+    # Use the working lora_utils from tests/lora
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tests", "lora"))
     import utils as lora_utils
     import mlx.core as mx
 
@@ -308,7 +308,7 @@ def generate_answer(
             print(f"🔍 GENERATION DEBUG for: {question}")
             print(f"{'='*60}")
 
-        # Use original table context from training data if available, otherwise use default
+        # Use original raw text format (not ChatML) to match working script
         if table_context:
             prompt = f"{table_context}\nQ: {question}\nA: "
         else:
@@ -318,7 +318,7 @@ def generate_answer(
         if debug:
             print(f"📝 Prompt: {prompt}")
 
-        # Use MLX-native generation (EXACT same approach as working script)
+        # Use EXACT same generation approach as working script
         print(prompt, end="", flush=True)
 
         prompt_array = mx.array(tokenizer.encode(prompt))
@@ -326,7 +326,7 @@ def generate_answer(
         tokens = []
         skip = 0
 
-        # Use lora_utils.generate() with same parameters as working script (temp=0.8)
+        # Use working lora_utils.generate() with EXACT same parameters (temp=0.8)
         for token, n in zip(
             lora_utils.generate(prompt_array, model, temp=0.8),
             range(max_tokens),
@@ -470,8 +470,16 @@ def main():
     parser.add_argument(
         "--max-tokens", type=int, default=50, help="Maximum tokens to generate (default: 50, same as working script)"
     )
+    parser.add_argument(
+        "--seed", type=int, default=0, help="Random seed for reproducible generation (default: 0, same as working script)"
+    )
 
     args = parser.parse_args()
+
+    # Set random seed for reproducible generation (same as working script)
+    import numpy as np
+    np.random.seed(args.seed)
+    print(f"🎲 Random seed set to: {args.seed}")
 
     # Check for FT_E2E_VERBOSE environment variable
     if not args.debug and os.environ.get("FT_E2E_VERBOSE", "0") == "1":

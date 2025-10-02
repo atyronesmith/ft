@@ -1,0 +1,50 @@
+{
+  "total_questions": 5,
+  "correct": 2,
+  "partial": 3,
+  "incorrect": 0,
+  "accuracy_percent": 40.0,
+  "partial_percent": 60.0,
+  "sample_results": [
+    {
+      "question": "What position does the player who played for butler cc (ks) play?",
+      "expected": "SELECT Position FROM 1-10015132-11 WHERE School/Club Team = 'Butler CC (KS)'",
+      "generated": "SELECT Position FROM 1-10015132-11 WHERE Player = 'Butler CC (KS)'",
+      "correct": false,
+      "partial": true,
+      "status": "\ud83d\udfe1 PARTIAL"
+    },
+    {
+      "question": "How many schools did player number 3 play at?",
+      "expected": "SELECT COUNT School/Club Team FROM 1-10015132-11 WHERE No. = '3'",
+      "generated": "SELECT COUNT School/Club Team FROM 1-10015132-11 WHERE Position = 'P'",
+      "correct": false,
+      "partial": true,
+      "status": "\ud83d\udfe1 PARTIAL"
+    },
+    {
+      "question": "What school did player number 21 play for?",
+      "expected": "SELECT School/Club Team FROM 1-10015132-11 WHERE No. = '21'",
+      "generated": "SELECT School/Club Team FROM 1-10015132-11 WHERE No. = 21",
+      "correct": false,
+      "partial": true,
+      "status": "\ud83d\udfe1 PARTIAL"
+    },
+    {
+      "question": "Who is the player that wears number 42?",
+      "expected": "SELECT Player FROM 1-10015132-11 WHERE No. = '42'",
+      "generated": "SELECT Player FROM 1-10015132-11 WHERE No. = '42'",
+      "correct": true,
+      "partial": true,
+      "status": "\u2705 CORRECT"
+    },
+    {
+      "question": "What player played guard for toronto in 1996-97?",
+      "expected": "SELECT Player FROM 1-10015132-11 WHERE Position = 'Guard' AND Years in Toronto = '1996-97'",
+      "generated": "SELECT Player FROM 1-10015132-11 WHERE Position = 'Guard' AND Years in Toronto = '1996-97'",
+      "correct": true,
+      "partial": true,
+      "status": "\u2705 CORRECT"
+    }
+  ]
+}

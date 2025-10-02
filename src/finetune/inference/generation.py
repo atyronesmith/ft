@@ -111,28 +111,29 @@ class MLXTextGenerator:
             logger.debug(message)
 
     def _format_prompt(self, text: str) -> tuple[str, list[int]]:
-        """Use the provided text as-is (assumed to be pre-formatted with chat template)."""
-        # The text parameter is already properly formatted by the calling code
-        # with the correct system message and chat template structure
+        """Use the provided text as-is (MLX simple text format, no chat template)."""
+        # For MLX-style generation, use the text directly without any chat template formatting
+        # This matches the official MLX examples approach
         formatted_prompt = text
 
-        # Encode with BOS token for proper generation
-        input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="np")[0].tolist()
+        # Simple tokenization without special tokens (MLX style)
+        input_ids = self.tokenizer.encode(formatted_prompt, add_special_tokens=False)
+        if isinstance(input_ids, list):
+            # Already a list
+            pass
+        else:
+            # Handle batched output from tokenizer
+            input_ids = input_ids[0].tolist() if hasattr(input_ids[0], 'tolist') else input_ids.tolist()
 
-        # Ensure BOS token is included for proper generation
-        if self.tokenizer.bos_token_id is not None and input_ids[0] != self.tokenizer.bos_token_id:
-            input_ids = [self.tokenizer.bos_token_id] + input_ids
-            formatted_prompt = self.tokenizer.decode(input_ids)
-
-        self._debug("Using pre-formatted prompt")
-        self._debug(f"Template format: {repr(formatted_prompt[:100])}...")
+        self._debug("Using simple text format (MLX style)")
+        self._debug(f"Prompt: {repr(formatted_prompt[:100])}...")
 
         if self.config.verbose:
             print("Input IDs:", input_ids)
             print("Input IDs (as tokens):", [self.tokenizer.decode([tid]) for tid in input_ids])
-            print("\n=== EXACT TEMPLATE SENT TO MODEL ===")
+            print("\n=== EXACT PROMPT SENT TO MODEL ===")
             print(repr(formatted_prompt))
-            print("=== END TEMPLATE ===\n")
+            print("=== END PROMPT ===\n")
 
         return formatted_prompt, input_ids
 
@@ -188,49 +189,32 @@ class MLXTextGenerator:
         try:
             partial_text = self.tokenizer.decode(tokens, skip_special_tokens=True)
 
-            # For factual Q&A: stop when we have a complete, confident answer
-            if "capital" in question.lower():
-                cities = [
-                    "Paris",
-                    "Berlin",
-                    "Rome",
-                    "Madrid",
-                    "Lisbon",
-                    "Tokyo",
-                    "Beijing",
-                    "Delhi",
-                    "New Delhi",
-                    "Canberra",
-                    "Ottawa",
-                    "London",
-                    "Washington",
-                    "Moscow",
-                    "Cairo",
-                    "Sydney",
-                    "Melbourne",  # Common incorrect answers for Australia
-                    "Vancouver",
-                    "Toronto",  # Common incorrect answers for Canada
-                ]
-                for city in cities:
-                    if city.lower() in partial_text.lower() and step >= 1:
-                        return True, f"found_answer_{city}"
+            # For SQL generation: stop when we have a complete SQL query
+            if "SELECT" in partial_text and len(partial_text.strip()) >= 10:
+                # Check if we have what looks like a complete SQL statement
+                sql_text = partial_text.strip()
 
-            # Stop on natural sentence completion patterns
-            # Look for complete sentences or phrases
+                # Stop if we have a complete SELECT statement (basic heuristic)
+                if (sql_text.count("SELECT") == 1 and
+                    ("FROM" in sql_text or "WHERE" in sql_text) and
+                    step >= 5):  # Minimum tokens for meaningful SQL
+                    return True, "complete_sql_query"
+
+                # Stop if the query ends naturally (e.g., with a semicolon or looks complete)
+                if sql_text.endswith(";") or (len(sql_text) >= 20 and step >= 8):
+                    return True, "sql_query_end"
+
+            # General stopping patterns for any text generation
             if len(partial_text.strip()) >= 3:
-                # Stop if we have a capital city name that looks complete
-                words = partial_text.strip().split()
-                if len(words) >= 1:
-                    last_word = words[-1].strip('.,!?')
-                    # Common capital cities patterns
-                    if last_word in ["Paris", "Berlin", "Rome", "Madrid", "Lisbon",
-                                   "Tokyo", "Beijing", "Ottawa", "London", "Moscow",
-                                   "Cairo", "Canberra", "Stockholm", "Seoul"]:
-                        return True, f"complete_city_name_{last_word}"
+                # Stop on natural completion patterns
+                if partial_text.strip().endswith((".", "!", "?", ";")):
+                    words = partial_text.strip().split()
+                    if len(words) >= 3:  # Minimum meaningful response
+                        return True, "natural_completion"
 
-            # Prevent overly long rambling answers
-            if len(tokens) >= 15:
-                return True, "rambling_prevention"
+            # Prevent overly long responses (adjusted for SQL which can be longer)
+            if len(tokens) >= 25:  # Increased from 15 for SQL queries
+                return True, "length_limit"
 
         except Exception:
             pass
@@ -252,61 +236,69 @@ class MLXTextGenerator:
             Generated text string
         """
         # 1. CANONICAL MLX INPUT ENCODING
-        # MLX expects simple list -> 1D array, no pre-batching
-        input_ids = self.tokenizer.encode(prompt)
+        # MLX expects simple encoding without special tokens for SQL format
+        input_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         if isinstance(input_ids, list):
-            tokens = mx.array(input_ids).astype(mx.int32)  # 1D array
+            tokens = mx.array(input_ids, dtype=mx.int32)  # 1D array
         else:
-            tokens = mx.array(input_ids[0]).astype(mx.int32)  # Handle batched input
+            tokens = mx.array(input_ids[0], dtype=mx.int32)  # Handle batched input
 
         # 2. CANONICAL MLX CACHE INITIALIZATION
-        # Create per-layer cache array (not None)
-        cache = [None] * len(self.model.layers)
+        # Important: cache must be None initially, NOT a list
+        cache = None
 
-        # 3. CANONICAL MLX SAMPLING FUNCTION
+        # 3. CANONICAL MLX SAMPLING FUNCTION (exact MLX pattern)
         def sample(logits):
-            return (mx.argmax(logits, axis=-1) if temperature <= 1e-6
-                    else mx.random.categorical(logits * (1 / temperature)))
+            if temperature <= 1e-6:
+                return mx.argmax(logits, axis=-1)
+            else:
+                return mx.random.categorical(logits / temperature)
 
-        # 4. CANONICAL MLX GENERATION LOOP
+        # 4. CANONICAL MLX GENERATION LOOP (exact MLX pattern)
         y = tokens  # Start with full prompt
-        generated = []
+        generated_tokens = []
 
         for step in range(max_tokens):
-            # KEY: Add batch dimension here: y[None] transforms [seq] -> [1, seq]
+            # KEY: Add batch dimension: y[None] transforms [seq] -> [1, seq]
             logits, cache = self.model(y[None], cache=cache)
 
-            # Get last token logits
-            logits = logits[:, -1, :]  # Shape: [1, vocab_size]
+            # Get logits for last token (shape: [1, vocab_size])
+            logits = logits[:, -1, :]
 
             # Sample next token
             next_token = sample(logits)
-            token_id = int(next_token.item()) if hasattr(next_token, 'item') else int(next_token)
 
-            # Check for EOS
-            if self.tokenizer.eos_token_id is not None and token_id == self.tokenizer.eos_token_id:
+            # Extract token ID safely - MLX arrays need .item() for scalar conversion
+            mx.eval(next_token)  # Force evaluation
+            token_id = int(next_token.item())
+
+            # Check for EOS token
+            if (self.tokenizer.eos_token_id is not None and
+                token_id == self.tokenizer.eos_token_id):
                 break
 
-            generated.append(token_id)
+            generated_tokens.append(token_id)
 
-            # CRITICAL: For next iteration, use only the new token (incremental generation)
-            y = next_token  # Single token for next iteration
+            # CRITICAL: For next iteration, use only the new token
+            # This is incremental generation - key MLX pattern
+            y = mx.array([token_id], dtype=mx.int32)
 
-            # Memory management (every 10 steps like MLX examples)
+            # Memory management (every 10 steps)
             if step % 10 == 0:
-                try:
-                    mx.clear_cache()
-                except AttributeError:
-                    # Fallback: force evaluation to manage memory
-                    mx.eval(next_token)
+                mx.eval(y)  # Force evaluation for memory management
 
-        # Decode generated tokens only
-        if generated:
-            generated_text = self.tokenizer.decode(generated)
+        # Decode only the generated tokens (not the input prompt)
+        if generated_tokens:
+            try:
+                generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            except Exception:
+                # Fallback: decode each token individually
+                generated_text = "".join([self.tokenizer.decode([t], skip_special_tokens=True)
+                                        for t in generated_tokens])
         else:
             generated_text = ""
 
-        return generated_text
+        return generated_text.strip()
 
     def generate(self, prompt: str, config: Optional[GenerationConfig] = None) -> str:
         """Generate text from the given prompt.
@@ -318,20 +310,12 @@ class MLXTextGenerator:
         Returns:
             Generated text string
         """
-        # Use simple generation by default for now
+        # Use simple generation by default (MLX canonical approach)
         if config is None:
-            return self.generate_simple(prompt)
+            return self.generate_simple(prompt, max_tokens=self.config.max_tokens, temperature=self.config.temperature)
 
-        # Fall back to advanced generation if config is provided
-        if config:
-            original_config = self.config
-            self.config = config
-
-        try:
-            return self._generate_internal(prompt)
-        finally:
-            if config:
-                self.config = original_config
+        # Use simple generation with config parameters for better MLX compatibility
+        return self.generate_simple(prompt, max_tokens=config.max_tokens, temperature=config.temperature)
 
     def generate_advanced(self, prompt: str, config: Optional[GenerationConfig] = None) -> str:
         """Advanced generation with all features (renamed from original generate).
@@ -559,8 +543,6 @@ def load_model_with_special_tokens(model_id: str):
 
 def load_model_and_tokenizer(model_id: str):
     """Load model and tokenizer, ensuring they are correctly configured."""
-    from transformers import AutoTokenizer
-
     from finetune.models.manager import ModelManager
 
     # Load the model and use its tokenizer (no special token modifications)
@@ -592,7 +574,7 @@ def load_model_and_tokenizer(model_id: str):
             f"VOCAB INFO: Using original TinyLlama vocab (tokenizer={vocab_size}, model={model.config.vocab_size})"
         )
 
-    return model, tokenizer, model.config
+    return model, tokenizer
 
 
 def generate_text(

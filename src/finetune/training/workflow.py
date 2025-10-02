@@ -158,8 +158,8 @@ class FineTuningWorkflow:
         Convert conversations to training batches with input_ids and labels.
 
         Args:
-            conversations: List of conversation dictionaries with 'messages'
-            template: Template for formatting conversations
+            conversations: List of conversation dictionaries with 'messages' or 'text'
+            template: Template for formatting conversations (only used for 'messages' format)
 
         Returns:
             List of tokenized batches ready for training
@@ -174,8 +174,18 @@ class FineTuningWorkflow:
         batches = []
 
         for conversation in conversations:
-            # Apply the template to format the conversation
-            formatted_text = template.format(conversation)
+            # Check data format and handle accordingly
+            if isinstance(conversation, dict) and "text" in conversation:
+                # MLX format: use text directly without template (like official MLX examples)
+                formatted_text = conversation["text"]
+                logger.debug("Using direct text format (MLX style)")
+            elif isinstance(conversation, dict) and "messages" in conversation:
+                # Chat format: apply template to format the conversation
+                formatted_text = template.format(conversation)
+                logger.debug("Using messages format with template")
+            else:
+                logger.warning(f"Unknown conversation format: {list(conversation.keys()) if isinstance(conversation, dict) else type(conversation)}")
+                continue
 
             # Tokenize the formatted text
             tokens = self.tokenizer.encode(formatted_text)

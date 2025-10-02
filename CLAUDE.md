@@ -669,3 +669,4 @@ When resuming work:
 - the file docs/design/STATUS.md is the single source of truth for high level status.  Individual design documents can have status details, but the actual overarching status is in the STATUS.md file.  All design documents should have their header updated with every status update.
 - when writing dates, check the envrionment for the correct date
 - try to put common functions in common files
+- Do not use code from the top level dev directory for code in the src directory

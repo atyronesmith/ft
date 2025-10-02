@@ -9,6 +9,15 @@ import pytest
 from tests.utils import ModelConfigFactory, TestEnvironment
 
 
+def _mlx_available():
+    """Check if MLX is available."""
+    try:
+        import mlx
+        return True
+    except ImportError:
+        return False
+
+
 class TestMLXModels:
     """Test MLX model implementations."""
 
@@ -43,9 +52,10 @@ class TestMLXModels:
         batch_size, seq_len = 2, 10
         x = mx.random.normal((batch_size, seq_len, small_config.hidden_size))
 
-        output = attn(x)
+        output, cache = attn(x)
 
         assert output.shape == (batch_size, seq_len, small_config.hidden_size)
+        assert cache is not None
 
     @pytest.mark.requires_mlx
     def test_attention_with_mask(self, small_config):
@@ -62,9 +72,10 @@ class TestMLXModels:
         # Create causal mask
         mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
 
-        output = attn(x, mask=mask)
+        output, cache = attn(x, mask=mask)
 
         assert output.shape == (batch_size, seq_len, small_config.hidden_size)
+        assert cache is not None
 
     @pytest.mark.requires_mlx
     def test_mlp_layer(self, small_config):
@@ -90,9 +101,10 @@ class TestMLXModels:
 
         # Test forward pass
         x = mx.random.normal((2, 10, small_config.hidden_size))
-        output = block(x)
+        output, cache = block(x)
 
         assert output.shape == x.shape
+        assert cache is not None
 
     @pytest.mark.requires_mlx
     def test_llama_model_creation(self, small_config):
@@ -118,9 +130,10 @@ class TestMLXModels:
         input_ids = mx.random.randint(0, small_config.vocab_size, (batch_size, seq_len))
 
         # Forward pass
-        logits = model.forward(input_ids)
+        logits, cache = model.forward(input_ids)
 
         assert logits.shape == (batch_size, seq_len, small_config.vocab_size)
+        assert cache is not None
 
     @pytest.mark.requires_mlx
     def test_gpt_model_creation(self, small_config):
@@ -167,7 +180,7 @@ class TestMLXModels:
         model.save(save_path)
 
         assert (save_path / "config.json").exists()
-        assert (save_path / "model.npz").exists()
+        assert (save_path / "model.safetensors").exists()
 
         # Create new model and load weights
         new_model = MLXLlamaModel(small_config)
@@ -176,8 +189,8 @@ class TestMLXModels:
         # Verify weights are loaded (just check they have same structure)
         # Can't easily compare nested dicts/lists, so just verify model works
         input_ids = mx.random.randint(0, small_config.vocab_size, (1, 5))
-        original_output = model.forward(input_ids)
-        loaded_output = new_model.forward(input_ids)
+        original_output, _ = model.forward(input_ids)
+        loaded_output, _ = new_model.forward(input_ids)
         assert original_output.shape == loaded_output.shape
 
     @pytest.mark.requires_mlx

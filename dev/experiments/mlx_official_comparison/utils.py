@@ -131,12 +131,29 @@ def load(path_or_hf_repo: str, tokenizer_config={}):
     # otherwise download and cache from the hf_repo and cache
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
-        model_path = Path(
-            snapshot_download(
+        # Check cache first to avoid re-downloading
+        from huggingface_hub import hf_hub_download
+        import os
+
+        try:
+            # Try to get cached model path - this will only succeed if files are cached
+            cached_config_path = hf_hub_download(
                 repo_id=path_or_hf_repo,
-                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+                filename="config.json",
+                local_files_only=True
             )
-        )
+            # Model is cached, get the cached directory
+            model_path = Path(cached_config_path).parent
+            print(f"📦 Using cached model from: {model_path}")
+        except Exception:
+            # Not cached, download it
+            print(f"⬇️  Downloading model {path_or_hf_repo} to cache...")
+            model_path = Path(
+                snapshot_download(
+                    repo_id=path_or_hf_repo,
+                    allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
+                )
+            )
 
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())

@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -127,7 +127,7 @@ def ensure_project_initialized() -> Path:
     return root
 
 
-def load_config(config_path: Path | None = None) -> dict:
+def load_config(config_path: Optional[Path] = None) -> dict:
     """Load configuration from YAML file."""
     import yaml
 
@@ -144,7 +144,7 @@ def load_config(config_path: Path | None = None) -> dict:
         raise CLIError(f"Invalid YAML configuration: {e}")
 
 
-def save_config(config: dict, config_path: Path | None = None) -> None:
+def save_config(config: dict, config_path: Optional[Path] = None) -> None:
     """Save configuration to YAML file."""
     import yaml
 

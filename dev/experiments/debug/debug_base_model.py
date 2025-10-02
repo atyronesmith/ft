@@ -54,7 +54,7 @@ def test_base_model_generation():
         try:
             # Create prompt using same method as training
             prompt = apply_chat_template_for_inference(workflow.tokenizer, question)
-            print(f"   Prompt preview: {prompt[:100]}...")
+            print(f"   Prompt preview: {prompt[:500]}...")
 
             # Generate with conservative settings
             config = GenerationConfig(

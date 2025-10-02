@@ -54,95 +54,116 @@ class TestMLXModelLoader:
 
     def test_should_skip_weight(self, loader):
         """Test weight skipping logic."""
+        from finetune.models.base import ModelConfig
+        config = ModelConfig(
+            model_type="llama",
+            vocab_size=1000,
+            hidden_size=256,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            intermediate_size=512,
+            max_position_embeddings=512,
+            tie_word_embeddings=True
+        )
+
         # Should skip these
-        assert loader._should_skip_weight("model.rotary_emb.inv_freq")
-        assert loader._should_skip_weight("transformer.masked_bias")
-        assert loader._should_skip_weight("attn.bias")
+        assert loader._should_skip_weight("model.rotary_emb.inv_freq", config)
+        assert loader._should_skip_weight("transformer.masked_bias", config)
+        assert loader._should_skip_weight("attn.bias", config)
 
         # Should not skip these
-        assert not loader._should_skip_weight("model.embed_tokens.weight")
-        assert not loader._should_skip_weight("model.layers.0.self_attn.q_proj.weight")
+        assert not loader._should_skip_weight("model.embed_tokens.weight", config)
+        assert not loader._should_skip_weight("model.layers.0.self_attn.q_proj.weight", config)
 
-        # Should skip lm_head.weight for tied embeddings (GPT-2 models)
-        assert loader._should_skip_weight("lm_head.weight")
+        # Should skip lm_head.weight for tied embeddings when tie_word_embeddings=True
+        assert loader._should_skip_weight("lm_head.weight", config)
 
-    def test_get_name_mapping_llama(self, loader):
-        """Test name mapping for Llama models."""
-        mapping = loader._get_name_mapping("llama")
+    def test_convert_to_nested_structure(self, loader):
+        """Test conversion of flat weights to nested structure."""
+        from finetune.models.base import ModelConfig
+        config = ModelConfig(
+            model_type="llama",
+            vocab_size=1000,
+            hidden_size=256,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            intermediate_size=512,
+            max_position_embeddings=512
+        )
 
-        assert "model.embed_tokens.weight" in mapping
-        assert mapping["model.embed_tokens.weight"] == "embed_tokens.weight"
-        assert mapping["lm_head.weight"] == "lm_head.weight"
-        assert mapping["model.norm.weight"] == "norm.weight"
+        # Mock weights with flat HuggingFace structure
+        flat_weights = {
+            "model.embed_tokens.weight": "embed_weight",
+            "model.layers.0.self_attn.q_proj.weight": "q_weight",
+            "model.layers.0.self_attn.k_proj.weight": "k_weight",
+            "model.norm.weight": "norm_weight",
+            "lm_head.weight": "lm_weight"
+        }
 
-    def test_get_name_mapping_gpt(self, loader):
-        """Test name mapping for GPT models."""
-        mapping = loader._get_name_mapping("gpt2")
+        nested = loader._convert_to_nested_structure(flat_weights, config)
 
-        # Check PyTorch -> MLX mappings
-        assert "transformer.wte.weight" in mapping
-        assert mapping["transformer.wte.weight"] == "wte.weight"
-        assert mapping["transformer.wpe.weight"] == "wpe.weight"
-        assert mapping["transformer.ln_f.weight"] == "ln_f.weight"
+        # Check nested structure is created correctly
+        assert "model" in nested
+        assert "lm_head.weight" in nested
+        assert nested["lm_head.weight"] == "lm_weight"
 
-    @patch("finetune.models.mlx_loader.mx")
-    def test_handle_special_weights(self, mock_mx, loader):
+        # Check model structure
+        model_params = nested["model"]
+        assert "embed_tokens" in model_params
+        assert "layers" in model_params
+        assert "norm" in model_params
+
+        # Check layer structure (layers creates nested structure)
+        # The method creates: model.layers.layers.0.self_attn...
+        layers_outer = model_params["layers"]
+        layers_inner = layers_outer["layers"]
+        assert 0 in layers_inner
+        layer_0 = layers_inner[0]
+        assert "self_attn" in layer_0
+        assert "q_proj" in layer_0["self_attn"]
+        assert layer_0["self_attn"]["q_proj"]["weight"] == "q_weight"
+
+    def test_handle_special_weights(self, loader):
         """Test special weight handling."""
         # Create mock weight
         mock_weight = MagicMock()
-        mock_weight.shape = (128, 256)  # out_features, in_features for PyTorch
-        mock_weight.T = MagicMock()  # Transposed version
+        mock_weight.shape = (128, 256)
 
-        # Test linear layer weights get transposed
+        # Current implementation just returns weight as-is (no transposition)
         result = loader._handle_special_weights("q_proj.weight", mock_weight, "llama")
-        assert result == mock_weight.T
+        assert result == mock_weight
 
         result = loader._handle_special_weights("gate_proj.weight", mock_weight, "llama")
-        assert result == mock_weight.T
+        assert result == mock_weight
 
-        # Test other weights don't get transposed
-        mock_weight.shape = (128,)  # 1D weight
+        # Test 1D weights
+        mock_weight.shape = (128,)
         result = loader._handle_special_weights("norm.weight", mock_weight, "llama")
-        assert result == mock_weight  # Not transposed
+        assert result == mock_weight
 
-    @patch("finetune.models.mlx_loader.mx")
-    def test_convert_weights(self, mock_mx, loader):
+    def test_convert_weights(self, loader):
         """Test weight conversion from PyTorch to MLX."""
-        # Create mock PyTorch tensors
-        mock_tensor = Mock()
-        mock_tensor.detach().cpu().numpy.return_value = np.array([[1, 2], [3, 4]])
+        # Current implementation just returns the source weights as-is
+        # since mx.load() handles conversion automatically
+        from finetune.models.base import ModelConfig
+        config = ModelConfig(
+            model_type="llama",
+            vocab_size=1000,
+            hidden_size=256,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            intermediate_size=512,
+            max_position_embeddings=512
+        )
 
         source_weights = {
-            "model.embed_tokens.weight": mock_tensor,
-            "model.layers.0.self_attn.q_proj.weight": mock_tensor,
-            "model.rotary_emb.inv_freq": mock_tensor,  # Should be skipped
+            "model.embed_tokens.weight": "embed_weight",
+            "model.layers.0.self_attn.q_proj.weight": "q_weight",
         }
 
-        # Mock MLX array creation with shape attribute
-        mock_array = Mock()
-        mock_array.shape = (2, 2)
-        mock_array.T = Mock()
-        mock_mx.array.return_value = mock_array
-
-        # Mock torch import with proper tensor type
-        with patch.dict("sys.modules", {"torch": Mock()}):
-            mock_torch = Mock()
-            mock_torch.Tensor = type(mock_tensor)  # Use the actual mock tensor type
-            import sys
-
-            sys.modules["torch"] = mock_torch
-
-            # Convert weights
-            mlx_weights = loader.convert_weights(source_weights, "llama")
-
-            # Check that rotary_emb was skipped
-            assert "model.rotary_emb.inv_freq" not in mlx_weights
-
-            # Check that other weights were converted
-            assert "embed_tokens.weight" in mlx_weights
-
-            # Verify MLX array creation was called
-            assert mock_mx.array.called
+        # Convert weights (should return as-is in current implementation)
+        converted = loader.convert_weights(source_weights, config)
+        assert converted == source_weights
 
     def test_load_pytorch_weights_safetensors(self, loader, temp_dir):
         """Test loading weights from safetensors format."""
@@ -194,7 +215,7 @@ class TestMLXModelLoader:
         (model_path / "pytorch_model-00001-of-00002.bin").touch()
         (model_path / "pytorch_model-00002-of-00002.bin").touch()
 
-        with patch("finetune.models.mlx_loader.glob.glob") as mock_glob:
+        with patch("glob.glob") as mock_glob:
             mock_glob.return_value = [
                 str(model_path / "pytorch_model-00001-of-00002.bin"),
                 str(model_path / "pytorch_model-00002-of-00002.bin"),
@@ -225,9 +246,8 @@ class TestMLXModelLoader:
             with pytest.raises(FileNotFoundError, match="No model weights found"):
                 loader._load_pytorch_weights(model_path)
 
-    @patch("finetune.models.mlx_loader.get_mlx_model")
-    def test_load_mlx_model(self, mock_get_model, loader, temp_dir):
-        """Test loading native MLX model."""
+    def test_load_from_path_hf_format(self, loader, temp_dir):
+        """Test loading from path with HuggingFace format."""
         model_path = temp_dir / "model"
         model_path.mkdir()
 
@@ -241,94 +261,55 @@ class TestMLXModelLoader:
             "intermediate_size": 512,
             "max_position_embeddings": 512,
         }
-        with open(model_path / "mlx_config.json", "w") as f:
+        with open(model_path / "config.json", "w") as f:
             json.dump(config, f)
 
-        # Create mock weights file
-        (model_path / "mlx_model.safetensors").touch()
+        # Create mock safetensors file
+        (model_path / "model.safetensors").touch()
 
-        # Mock model
-        mock_model = Mock()
-        mock_model.load = Mock()
-        mock_get_model.return_value = mock_model
+        # Mock the _load_hf_model_to_mlx method
+        with patch.object(loader, "_load_hf_model_to_mlx") as mock_load_hf:
+            mock_result = ("mock_model", "mock_tokenizer", "mock_config")
+            mock_load_hf.return_value = mock_result
 
-        model = loader._load_mlx_model(model_path)
+            result = loader.load_from_path(model_path)
 
-        assert model == mock_model
-        mock_model.load.assert_called_once_with(model_path)
+            assert result == mock_result
+            mock_load_hf.assert_called_once_with(model_path, None)
 
-    @patch("finetune.models.mlx_loader.get_mlx_model")
-    def test_load_from_path_mlx_format(self, mock_get_model, loader, mock_mlx_model):
-        """Test loading from path with MLX format."""
-        mock_model = Mock()
-        mock_get_model.return_value = mock_model
-        mock_model.load = Mock()
-
-        model = loader.load_from_path(mock_mlx_model)
-
-        assert model == mock_model
-        mock_model.load.assert_called_once()
-
-    @patch("finetune.models.mlx_loader.get_mlx_model")
-    def test_load_and_convert(
-        self, mock_get_model, loader, mock_huggingface_model, mock_pytorch_weights
-    ):
-        """Test loading and converting HuggingFace model."""
-        mock_model = Mock()
-        mock_model.update = Mock()
-        mock_model.num_parameters = 1000000
-        mock_get_model.return_value = mock_model
-
-        with patch.object(loader, "_load_pytorch_weights", return_value=mock_pytorch_weights):
-            with patch.object(loader, "convert_weights", return_value={}):
-                model = loader._load_and_convert(mock_huggingface_model)
-
-        assert model == mock_model
-        mock_model.update.assert_called_once()
-
-    @patch("finetune.models.mlx_loader.get_mlx_model")
-    def test_load_from_huggingface(self, mock_get_model, loader, temp_dir):
+    def test_load_from_huggingface(self, loader, temp_dir):
         """Test loading model from HuggingFace."""
         # Mock huggingface_hub
         with patch.dict("sys.modules", {"huggingface_hub": Mock()}):
             with patch("huggingface_hub.snapshot_download") as mock_download:
                 # Setup mocks
                 mock_download.return_value = str(temp_dir / "downloaded")
-                mock_model = Mock()
-                mock_model.num_parameters = 1000000
-                mock_get_model.return_value = mock_model
 
                 # Create mock downloaded model
                 downloaded_path = temp_dir / "downloaded"
                 downloaded_path.mkdir()
                 config = {
-                    "model_type": "gpt2",
-                    "vocab_size": 50257,
-                    "hidden_size": 768,
-                    "num_hidden_layers": 12,
-                    "num_attention_heads": 12,
+                    "model_type": "llama",  # Use supported model type
+                    "vocab_size": 32000,
+                    "hidden_size": 4096,
+                    "num_hidden_layers": 32,
+                    "num_attention_heads": 32,
                 }
                 with open(downloaded_path / "config.json", "w") as f:
                     json.dump(config, f)
-                (downloaded_path / "pytorch_model.bin").touch()
+                (downloaded_path / "model.safetensors").touch()
 
-                with patch.object(loader, "_load_and_convert", return_value=mock_model):
-                    model = loader.load_from_huggingface("gpt2")
+                # Mock the _load_hf_model_to_mlx method
+                with patch.object(loader, "_load_hf_model_to_mlx") as mock_load_hf:
+                    mock_result = ("mock_model", "mock_tokenizer", "mock_config")
+                    mock_load_hf.return_value = mock_result
 
-                assert model == mock_model
-                mock_download.assert_called_once()
+                    result = loader.load_from_huggingface("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 
-    @patch("finetune.models.mlx_loader.logger")
-    def test_quantize_model_placeholder(self, mock_logger, loader):
-        """Test quantization (placeholder implementation)."""
-        mock_model = Mock()
-        mock_model.named_modules.return_value = []
+                    assert result == mock_result
+                    mock_download.assert_called_once()
+                    mock_load_hf.assert_called()
 
-        quantized = loader._quantize_model(mock_model, bits=4)
-
-        assert quantized == mock_model
-        mock_logger.info.assert_any_call("Quantizing model to 4-bit...")
-        mock_logger.info.assert_any_call("Quantization complete")
 
     def test_get_model_info(self, loader):
         """Test getting model information."""

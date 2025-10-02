@@ -321,41 +321,67 @@ class LoRATrainer:
         if not self.output_dir.exists():
             return
 
-        # Find all final_model directories in parent directory
+        # Find all run-NNNNN directories in parent directory
         parent_dir = self.output_dir.parent
         if not parent_dir.exists():
             return
 
-        # Look for directories that contain final_model subdirectories
-        training_runs = []
+        # Collect all run-NNNNN directories (complete and incomplete)
+        all_training_runs = []
+        complete_training_runs = []
+
         for item in parent_dir.iterdir():
-            if item.is_dir():
+            if item.is_dir() and item.name.startswith("run-"):
+                # Get modification time of the run directory
+                mtime = item.stat().st_mtime
+                all_training_runs.append((mtime, item))
+
+                # Check if it's a complete training run
                 final_model_path = item / "final_model"
                 if final_model_path.exists() and (final_model_path / "lora_weights.npz").exists():
-                    # Get modification time of the final_model directory
-                    mtime = final_model_path.stat().st_mtime
-                    training_runs.append((mtime, item))
+                    complete_training_runs.append((mtime, item))
 
-        # Sort by modification time (newest first)
-        training_runs.sort(key=lambda x: x[0], reverse=True)
+        # Sort both lists by modification time (newest first)
+        all_training_runs.sort(key=lambda x: x[0], reverse=True)
+        complete_training_runs.sort(key=lambda x: x[0], reverse=True)
 
-        # Keep only the most recent max_runs
-        if len(training_runs) > max_runs:
-            runs_to_remove = training_runs[max_runs:]
+        # Keep the most recent max_runs COMPLETE training runs
+        complete_to_keep = {run_dir for _, run_dir in complete_training_runs[:max_runs]}
+
+        # Also keep incomplete runs from the last 24 hours (they might be in progress)
+        import time
+        current_time = time.time()
+        recent_threshold = current_time - (24 * 60 * 60)  # 24 hours ago
+
+        # Find runs to remove: any run that's not in the recent complete runs to keep
+        # and not a recent incomplete run
+        runs_to_remove = []
+        for mtime, run_dir in all_training_runs:
+            if run_dir not in complete_to_keep:
+                # Remove if it's either:
+                # 1. An old incomplete run (older than 24 hours)
+                # 2. An old complete run not in top max_runs
+                if mtime < recent_threshold or any(run_dir == comp_run for _, comp_run in complete_training_runs[max_runs:]):
+                    runs_to_remove.append((mtime, run_dir))
+
+        if runs_to_remove:
             logger.info(
-                f"Cleaning up {len(runs_to_remove)} old training runs (keeping {max_runs} most recent)"
+                f"Cleaning up {len(runs_to_remove)} old training runs "
+                f"(keeping {len(complete_to_keep)} complete runs + recent incomplete runs)"
             )
 
             for mtime, run_dir in runs_to_remove:
                 try:
                     timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-                    logger.info(f"Removing old training run: {run_dir.name} (from {timestamp})")
+                    final_model_exists = (run_dir / "final_model" / "lora_weights.npz").exists()
+                    status = "complete" if final_model_exists else "incomplete"
+                    logger.info(f"Removing old {status} training run: {run_dir.name} (from {timestamp})")
                     shutil.rmtree(run_dir)
                 except Exception as e:
                     logger.warning(f"Failed to remove {run_dir}: {e}")
         else:
             logger.info(
-                f"Found {len(training_runs)} training runs, no cleanup needed (max: {max_runs})"
+                f"Found {len(complete_training_runs)} complete training runs, no cleanup needed (max: {max_runs})"
             )
 
     def load_checkpoint(self, checkpoint_dir: Path):

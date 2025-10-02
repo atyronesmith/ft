@@ -72,6 +72,9 @@ class TestEndToEndWorkflow:
         """Test dataset loading and template application."""
         workflow = FineTuningWorkflow(training_config)
 
+        # First prepare model to load tokenizer
+        workflow.prepare_model()
+
         # Test dataset preparation
         workflow.prepare_dataset()
 
@@ -101,6 +104,9 @@ class TestEndToEndWorkflow:
     def test_tokenization(self, training_config):
         """Test dataset tokenization functionality."""
         workflow = FineTuningWorkflow(training_config)
+
+        # First prepare model to load tokenizer
+        workflow.prepare_model()
 
         # Prepare dataset first
         workflow.prepare_dataset()
@@ -156,6 +162,7 @@ class TestEndToEndWorkflow:
             )
 
             workflow = FineTuningWorkflow(config)
+            workflow.prepare_model()
             workflow.prepare_dataset()
 
             assert workflow.train_dataset is not None
@@ -209,6 +216,9 @@ class TestEndToEndWorkflow:
         )
 
         workflow = FineTuningWorkflow(config)
+
+        # First prepare model to load tokenizer
+        workflow.prepare_model()
 
         # Dataset preparation should include validation
         workflow.prepare_dataset()

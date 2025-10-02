@@ -32,12 +32,13 @@ if TYPE_CHECKING and MLX_AVAILABLE:
 class MLXModelLoader(ModelLoader):
     """Loader for MLX models from HuggingFace."""
 
-    def __init__(self, cache_dir: Path | None = None):
+    def __init__(self, cache_dir: Path):
         logger.info("Entering MLXModelLoader.__init__")
         if not MLX_AVAILABLE:
             raise ImportError("MLX is not installed. Please install with: pip install mlx")
 
-        self.cache_dir = cache_dir or Path.home() / ".cache" / "finetune" / "models"
+        # Cache directory is provided by ModelManager
+        self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def load_from_huggingface(
@@ -54,19 +55,14 @@ class MLXModelLoader(ModelLoader):
         """Load a model from HuggingFace Hub with caching."""
         logger.info(f"Loading model from HuggingFace: {model_id}")
 
-        # Only support TinyLlama for now (like working example)
-        if "tinyllama" not in model_id.lower():
-            raise ValueError(f"Only TinyLlama models are supported for now. Got: {model_id}")
+        # Support Llama-based models (TinyLlama, Llama-2, etc.)
+        supported_models = ["tinyllama", "llama"]
+        if not any(model_type in model_id.lower() for model_type in supported_models):
+            raise ValueError(f"Only Llama-based models are supported (TinyLlama, Llama-2, etc.). Got: {model_id}")
 
         cache_dir = cache_dir or self.cache_dir
 
-        # Check if model is already cached
-        cached_path = self._get_cached_path(model_id, revision, tokenizer_config)
-        if cached_path.exists() and (cached_path / "config.json").exists():
-            logger.info(f"Loading from cache: {cached_path}")
-            return self._load_hf_model_to_mlx(cached_path, tokenizer_config)
-
-        # Download from HuggingFace
+        # Use HuggingFace's snapshot_download - it handles caching automatically
         try:
             from huggingface_hub import snapshot_download
         except ImportError as e:
@@ -74,20 +70,16 @@ class MLXModelLoader(ModelLoader):
                 "Please install huggingface_hub: pip install huggingface_hub"
             ) from e
 
-        logger.info(f"Downloading model {model_id} from HuggingFace Hub...")
-        # Download to HF cache location (revision=revision if specified)
+        # snapshot_download automatically uses cache if available, downloads if not
         download_kwargs = {"repo_id": model_id, "allow_patterns": ["*.json", "*.safetensors", "tokenizer.model"]}
         if revision:
             download_kwargs["revision"] = revision
 
         hf_path = Path(snapshot_download(**download_kwargs))
+        logger.info(f"Using model from: {hf_path}")
 
-        # Copy to our cache (simplified - just copy the necessary files)
-        self._cache_model_files(hf_path, cached_path)
-        print("hello I am here")
-
-        # Load directly to MLX format in memory (exactly like working example)
-        return self._load_hf_model_to_mlx(cached_path, tokenizer_config)
+        # Load directly from HuggingFace cache path
+        return self._load_hf_model_to_mlx(hf_path, tokenizer_config)
 
     def _load_hf_model_to_mlx(self, hf_path: Path, tokenizer_config=None) -> BaseModel:
         logger.info("Entering MLXModelLoader._load_hf_model_to_mlx")
@@ -118,9 +110,14 @@ class MLXModelLoader(ModelLoader):
                                for k, v in loaded_weights.items()}
             weights.update(converted_weights.items())
 
-        # 3. Create model and load weights (exactly like working example)
+        # 3. Create model and load weights with nested structure
         model = get_mlx_model(config)
-        model.load_weights(list(weights.items()))
+
+        # Convert flat HuggingFace weights to nested MLX structure
+        nested_weights = self._convert_to_nested_structure(weights, config)
+
+        # Load weights using the model's update method
+        model.update(nested_weights)
         mx.eval(model.parameters())
         logger.info("=" * 30 + " Model Parameters " + "=" * 28)
 
@@ -159,50 +156,17 @@ class MLXModelLoader(ModelLoader):
 
         raise FileNotFoundError(f"No valid model found at {path}")
 
-    def _get_cached_path(
-        self, model_id: str, revision: str | None, tokenizer_config: dict | None = None
-    ) -> Path:
-        logger.info("Entering MLXModelLoader._get_cached_path")
-        """Get cache path for a model."""
-        safe_model_id = model_id.replace("/", "--")
-        if revision:
-            safe_model_id = f"{safe_model_id}--{revision}"
-        return self.cache_dir / safe_model_id
-
-    def _cache_model_files(self, hf_path: Path, cached_path: Path):
-        logger.info("Entering MLXModelLoader._cache_model_files")
-        """Copy necessary model files to our cache."""
-        import shutil
-
-        cached_path.mkdir(parents=True, exist_ok=True)
-
-        # Copy config file
-        if (hf_path / "config.json").exists():
-            shutil.copy2(hf_path / "config.json", cached_path / "config.json")
-
-        # Copy safetensors files
-        import glob
-        for safetensors_file in glob.glob(str(hf_path / "*.safetensors")):
-            filename = Path(safetensors_file).name
-            shutil.copy2(safetensors_file, cached_path / filename)
-
-        # Copy tokenizer files
-        for tokenizer_file in ["tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt", "special_tokens_map.json", "tokenizer.model"]:
-            if (hf_path / tokenizer_file).exists():
-                shutil.copy2(hf_path / tokenizer_file, cached_path / tokenizer_file)
-
-        logger.info(f"Cached model files to {cached_path}")
-
-# Note: Redundant _load_model_from_safetensors removed - _load_hf_model_to_mlx does the same thing
+# Removed _get_cached_path and _cache_model_files - we now use HuggingFace cache directly
 
     def _load_pytorch_weights(self, path: Path) -> dict[str, Any]:
-        logger.info("Entering MLXModelLoader._load_pytorch_weights")
         """Load weights from Hugging Face standard formats.
 
         Prioritizes Safetensors (current standard) with fallback to PyTorch .bin format.
         """
         import torch
         from loguru import logger
+
+        logger.info("Entering MLXModelLoader._load_pytorch_weights")
 
         weights = {}
 
@@ -264,58 +228,52 @@ class MLXModelLoader(ModelLoader):
             current[parts[-1]] = value
         return nested
 
-    def _get_name_mapping(self, model_type: str) -> dict[str, str]:
-        logger.info("Entering MLXModelLoader._get_name_mapping")
-        """Get weight name mapping for different model types."""
+    def _convert_to_nested_structure(self, weights: dict, config: ModelConfig) -> dict:
+        """Convert flat HuggingFace weights to nested MLX structure."""
+        nested_weights = {}
 
-        if "llama" in model_type.lower():
-            return {
-                # Embeddings
-                "model.embed_tokens.weight": "embed_tokens.weight",
-                "lm_head.weight": "lm_head.weight",
-                "model.norm.weight": "norm.weight",
-                # Layers - using string replacement for layer indices
-                # This is simplified - full implementation would handle all cases
-            }
+        for name, weight in weights.items():
+            if name.startswith("model."):
+                # HuggingFace: model.embed_tokens.weight → MLX: model.embed_tokens.weight
+                # HuggingFace: model.layers.X.Y.Z → MLX: model.layers.X.Y.Z
+                # Remove the "model." prefix from HuggingFace and add to nested structure
+                model_weight_name = name[6:]  # Remove "model." prefix
 
-        elif "gpt" in model_type.lower():
-            # GPT-2 / DialoGPT parameter mapping (matches actual PyTorch structure)
-            mapping = {
-                # Embeddings
-                "transformer.wte.weight": "wte.weight",
-                "transformer.wpe.weight": "wpe.weight",
-                # Final layer norm
-                "transformer.ln_f.weight": "ln_f.weight",
-                "transformer.ln_f.bias": "ln_f.bias",
-            }
+                if "model" not in nested_weights:
+                    nested_weights["model"] = {}
 
-            # Add layer-specific mappings for transformer blocks
-            for i in range(50):  # Support up to 50 layers
-                layer_prefix = f"transformer.h.{i}"
-                mlx_prefix = f"layers.{i}"  # Use layers.0, layers.1, etc. format for MLX
+                # Split the path and create nested structure
+                parts = model_weight_name.split(".")
+                current = nested_weights["model"]
 
-                # Attention layers (keep GPT-2 naming)
-                mapping[f"{layer_prefix}.attn.c_attn.weight"] = f"{mlx_prefix}.attn.c_attn.weight"
-                mapping[f"{layer_prefix}.attn.c_attn.bias"] = f"{mlx_prefix}.attn.c_attn.bias"
-                mapping[f"{layer_prefix}.attn.c_proj.weight"] = f"{mlx_prefix}.attn.c_proj.weight"
-                mapping[f"{layer_prefix}.attn.c_proj.bias"] = f"{mlx_prefix}.attn.c_proj.bias"
+                for part in parts[:-1]:
+                    if part not in current:
+                        # Handle layer indices properly (convert to int for layers)
+                        if part.isdigit() and "layers" in parts:
+                            current["layers"] = current.get("layers", {})
+                            current = current["layers"]
+                            if int(part) not in current:
+                                current[int(part)] = {}
+                            current = current[int(part)]
+                        else:
+                            current[part] = {}
+                            current = current[part]
+                    else:
+                        if part.isdigit() and "layers" in parts:
+                            current = current["layers"][int(part)]
+                        else:
+                            current = current[part]
 
-                # MLP layers (keep GPT-2 naming)
-                mapping[f"{layer_prefix}.mlp.c_fc.weight"] = f"{mlx_prefix}.mlp.c_fc.weight"
-                mapping[f"{layer_prefix}.mlp.c_fc.bias"] = f"{mlx_prefix}.mlp.c_fc.bias"
-                mapping[f"{layer_prefix}.mlp.c_proj.weight"] = f"{mlx_prefix}.mlp.c_proj.weight"
-                mapping[f"{layer_prefix}.mlp.c_proj.bias"] = f"{mlx_prefix}.mlp.c_proj.bias"
+                current[parts[-1]] = weight
 
-                # Layer norms (keep GPT-2 naming)
-                mapping[f"{layer_prefix}.ln_1.weight"] = f"{mlx_prefix}.ln_1.weight"
-                mapping[f"{layer_prefix}.ln_1.bias"] = f"{mlx_prefix}.ln_1.bias"
-                mapping[f"{layer_prefix}.ln_2.weight"] = f"{mlx_prefix}.ln_2.weight"
-                mapping[f"{layer_prefix}.ln_2.bias"] = f"{mlx_prefix}.ln_2.bias"
+            elif name.startswith("lm_head."):
+                # HuggingFace: lm_head.weight → MLX: lm_head.weight (top level)
+                nested_weights[name] = weight
+            else:
+                # Other weights (rare case)
+                nested_weights[name] = weight
 
-            return mapping
-
-        # Default: return as-is
-        return {}
+        return nested_weights
 
     def _should_skip_weight(
         self, name: str, config: ModelConfig, tokenizer_provided: bool = False

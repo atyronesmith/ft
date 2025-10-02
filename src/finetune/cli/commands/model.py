@@ -3,6 +3,7 @@ Model management commands for the CLI.
 """
 
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -15,7 +16,7 @@ console = Console()
 
 @app.command("list")
 def list_models(
-    source: str | None = typer.Option(None, help="Filter by source (huggingface, local, cache)"),
+    source: Optional[str] = typer.Option(None, help="Filter by source (huggingface, local, cache)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
 ):
     """List available models."""
@@ -70,9 +71,8 @@ def list_models(
 @app.command()
 def pull(
     model_name: str = typer.Argument(..., help="Model name from HuggingFace"),
-    quantization: str
-    | None = typer.Option(None, "--quantization", "-q", help="Quantization (4bit, 8bit)"),
-    revision: str | None = typer.Option(None, "--revision", "-r", help="Model revision/branch"),
+    quantization: Optional[str] = typer.Option(None, "--quantization", "-q", help="Quantization (4bit, 8bit)"),
+    revision: Optional[str] = typer.Option(None, "--revision", "-r", help="Model revision/branch"),
 ):
     """Download a model from HuggingFace."""
     from finetune.models.manager import model_manager

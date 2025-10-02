@@ -95,9 +95,9 @@ class LoRALinear(nn.Module):
         output_dims, input_dims = weight.shape
         fused_linear = nn.Linear(input_dims, output_dims, bias=bias)
 
-        # Keep LoRA weights in their original dtype (bfloat16) - no conversion
-        lora_b = self.scale * self.lora_b.T
-        lora_a = self.lora_a.T
+        # MLX example dtype handling
+        lora_b = (self.scale * self.lora_b.T).astype(dtype)
+        lora_a = self.lora_a.T.astype(dtype)
         fused_linear.weight = weight + lora_b @ lora_a
         if bias:
             fused_linear.bias = linear.bias
@@ -134,33 +134,33 @@ class LoRALinear(nn.Module):
             # Default scaling for backward compatibility (alpha=16, r=8 -> scale=2.0)
             self.scale = scale if scale is not None else 16.0 / rank
 
+        # Ensure rank is an integer for all downstream operations
+        self.rank = rank
+
         # Regular linear layer weights
         self.linear = nn.Linear(input_dims, output_dims, bias=bias)
         # Add base attribute for test compatibility
         self.base = self.linear
 
-        # Low rank lora weights - initialize in bfloat16 for consistency
+        # Low rank lora weights - CRITICAL: match base linear dtype for consistency
         init_scale = 1 / math.sqrt(input_dims)
+        # Use the same dtype as the base linear layer to prevent mixed precision issues
+        base_dtype = self.linear.weight.dtype
         self.lora_a = mx.random.uniform(
             low=-init_scale,
             high=init_scale,
-            shape=(input_dims, rank),
-            dtype=mx.bfloat16
+            shape=(input_dims, self.rank),
+            dtype=base_dtype,
         )
-        self.lora_b = mx.zeros(shape=(rank, output_dims), dtype=mx.bfloat16)
+        self.lora_b = mx.zeros(shape=(self.rank, output_dims), dtype=base_dtype)
 
     def __call__(self, x):
-        # Use consistent bfloat16 dtype - no conversions needed
-        y = self.linear(x)
-
-        # Apply dropout to input if configured (for compatibility)
-        lora_input = x
-        if self.dropout is not None and self.training:
-            # Create dropout on the fly (MLX pattern)
-            dropout_layer = nn.Dropout(self.dropout)
-            lora_input = dropout_layer(x)
-
-        z = (lora_input @ self.lora_a) @ self.lora_b
+        # EXACT MLX example implementation
+        dtype = self.linear.weight.dtype
+        if isinstance(self.linear, nn.QuantizedLinear):
+            dtype = self.linear.scales.dtype
+        y = self.linear(x.astype(dtype))
+        z = (x @ self.lora_a) @ self.lora_b
         return y + self.scale * z
 
 
@@ -313,3 +313,164 @@ def load_lora_weights(model: nn.Module, path: str | Path) -> None:
     """Load LoRA weights into a model - MLX example pattern."""
     # Load weights using MLX pattern
     model.load_weights(str(path), strict=False)
+
+
+def infer_lora_config_from_weights(weights_path: str | Path) -> LoRAConfig:
+    """
+    Automatically infer LoRA configuration from .npz weights file structure.
+
+    This eliminates the need for separate config files by analyzing the
+    saved weights to extract rank, target modules, and other parameters.
+
+    Args:
+        weights_path: Path to the .npz weights file
+
+    Returns:
+        LoRAConfig object with inferred parameters
+
+    Example:
+        config = infer_lora_config_from_weights("model/lora_weights.npz")
+        # config.r = 8 (inferred from matrix shapes)
+        # config.target_modules = ["q_proj", "v_proj"] (inferred from keys)
+    """
+    import numpy as np
+
+    if not Path(weights_path).exists():
+        raise FileNotFoundError(f"LoRA weights file not found: {weights_path}")
+
+    # Load the weights file
+    weights = np.load(str(weights_path))
+
+    if len(weights.keys()) == 0:
+        raise ValueError(f"Empty weights file: {weights_path}")
+
+    # Infer rank from lora_b matrices (all should have same rank)
+    rank = None
+    for key in weights.keys():
+        if 'lora_b' in key:
+            shape = weights[key].shape
+            rank = shape[0]  # First dimension of lora_b is the rank
+            break
+
+    if rank is None:
+        raise ValueError(f"No lora_b matrices found in {weights_path}")
+
+    # Infer target modules from key patterns
+    target_modules = set()
+    for key in weights.keys():
+        if 'lora_a' in key or 'lora_b' in key:
+            # Extract module name: layers.X.self_attn.q_proj.lora_a -> q_proj
+            parts = key.split('.')
+            if len(parts) >= 4:
+                module_name = parts[-2]  # Second to last part before lora_a/lora_b
+                target_modules.add(module_name)
+
+    # Infer which layers have LoRA applied (for information only)
+    lora_layers = set()
+    for key in weights.keys():
+        if 'layers.' in key:
+            # Extract layer number: layers.6.self_attn.q_proj.lora_a -> 6
+            parts = key.split('.')
+            if len(parts) >= 2 and parts[0] == 'layers':
+                try:
+                    layer_num = int(parts[1])
+                    lora_layers.add(layer_num)
+                except ValueError:
+                    continue
+
+    # Use sensible defaults for other parameters
+    alpha = rank * 2.0  # Common default: alpha = 2 * rank
+    dropout = 0.05      # Standard default
+
+    return LoRAConfig(
+        r=rank,
+        alpha=alpha,
+        dropout=dropout,
+        target_modules=sorted(list(target_modules)) if target_modules else None,
+    )
+
+
+def apply_lora_from_weights_auto(model: nn.Module, weights_path: str | Path) -> LoRAConfig:
+    """
+    Automatically apply LoRA structure and load weights from .npz file.
+
+    This function combines configuration inference, LoRA application, and weight loading
+    into a single call, eliminating the need for separate config files.
+
+    Args:
+        model: The MLX model to apply LoRA to
+        weights_path: Path to the .npz LoRA weights file
+
+    Returns:
+        LoRAConfig object that was inferred and applied
+
+    Example:
+        # Just two lines needed - no config files!
+        model, tokenizer, _ = manager.load_model("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+        config = apply_lora_from_weights_auto(model, "training/run-123/lora_weights.npz")
+    """
+
+    # Step 1: Infer configuration from weights file
+    config = infer_lora_config_from_weights(weights_path)
+
+    # Step 2: Apply LoRA structure to model
+    apply_lora_to_model(model, config)
+
+    # Step 3: Load the weights
+    load_lora_weights(model, weights_path)
+
+    return config
+
+
+def get_lora_info_from_weights(weights_path: str | Path) -> dict:
+    """
+    Get detailed information about LoRA weights file without applying to model.
+
+    Useful for inspection and validation of LoRA weights files.
+
+    Args:
+        weights_path: Path to the .npz weights file
+
+    Returns:
+        Dictionary with detailed information about the LoRA weights
+    """
+    import numpy as np
+
+    if not Path(weights_path).exists():
+        raise FileNotFoundError(f"LoRA weights file not found: {weights_path}")
+
+    weights = np.load(str(weights_path))
+
+    # Analyze the structure
+    config = infer_lora_config_from_weights(weights_path)
+
+    # Count parameters by type
+    lora_a_count = sum(1 for key in weights.keys() if 'lora_a' in key)
+    lora_b_count = sum(1 for key in weights.keys() if 'lora_b' in key)
+
+    # Get layer information
+    lora_layers = set()
+    for key in weights.keys():
+        if 'layers.' in key:
+            parts = key.split('.')
+            if len(parts) >= 2 and parts[0] == 'layers':
+                try:
+                    layer_num = int(parts[1])
+                    lora_layers.add(layer_num)
+                except ValueError:
+                    continue
+
+    # Calculate total parameter count
+    total_params = sum(weights[key].size for key in weights.keys())
+
+    return {
+        "config": config,
+        "total_parameters": len(weights.keys()),
+        "lora_a_matrices": lora_a_count,
+        "lora_b_matrices": lora_b_count,
+        "total_values": total_params,
+        "target_layers": sorted(list(lora_layers)),
+        "layer_count": len(lora_layers),
+        "layer_range": f"{min(lora_layers)}-{max(lora_layers)}" if lora_layers else "none",
+        "file_size_mb": Path(weights_path).stat().st_size / (1024 * 1024),
+    }

@@ -19,7 +19,9 @@ class ModelManager:
     """Manages model loading, caching, and registry."""
 
     def __init__(self, cache_dir: Path | None = None, registry_db: Path | None = None):
-        self.cache_dir = cache_dir or Path.home() / ".cache" / "finetune" / "models"
+        # Use HuggingFace's standard cache location
+        from huggingface_hub.constants import HF_HUB_CACHE
+        self.cache_dir = cache_dir or Path(HF_HUB_CACHE)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.registry = ModelRegistry(registry_db)

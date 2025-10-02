@@ -14,6 +14,7 @@ from huggingface_hub import snapshot_download
 
 
 def fetch_from_hub(hf_path: str):
+    print("Entering fetch_from_hub")
     model_path = snapshot_download(
         repo_id=hf_path,
         allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
@@ -34,6 +35,7 @@ def fetch_from_hub(hf_path: str):
 
 
 def upload_to_hub(path: str, name: str, hf_path: str):
+    print("Entering upload_to_hub")
     import os
 
     from huggingface_hub import HfApi, ModelCard, logging
@@ -70,6 +72,7 @@ python generate.py --model {repo_id} --prompt "My name is"
 
 
 def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
+    print("Entering make_shards")
     max_file_size_bytes = max_file_size_gibibyte << 30
     shards = []
     shard: Dict[str, mx.array] = {}
@@ -85,6 +88,7 @@ def make_shards(weights: dict, max_file_size_gibibyte: int = 15):
 
 
 def save_model(save_dir: Union[str, Path], weights, tokenizer, config):
+    print("Entering save_model")
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -127,36 +131,22 @@ def save_model(save_dir: Union[str, Path], weights, tokenizer, config):
 
 
 def load(path_or_hf_repo: str, tokenizer_config={}):
+    print("Entering load")
     # If the path exists, it will try to load model form it
     # otherwise download and cache from the hf_repo and cache
     model_path = Path(path_or_hf_repo)
     if not model_path.exists():
-        # Check cache first to avoid re-downloading
-        from huggingface_hub import hf_hub_download
-        import os
-
-        try:
-            # Try to get cached model path - this will only succeed if files are cached
-            cached_config_path = hf_hub_download(
+        model_path = Path(
+            snapshot_download(
                 repo_id=path_or_hf_repo,
-                filename="config.json",
-                local_files_only=True
+                allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
             )
-            # Model is cached, get the cached directory
-            model_path = Path(cached_config_path).parent
-            print(f"📦 Using cached model from: {model_path}")
-        except Exception:
-            # Not cached, download it
-            print(f"⬇️  Downloading model {path_or_hf_repo} to cache...")
-            model_path = Path(
-                snapshot_download(
-                    repo_id=path_or_hf_repo,
-                    allow_patterns=["*.json", "*.safetensors", "tokenizer.model"],
-                )
-            )
+        )
 
     with open(model_path / "config.json", "r") as f:
         config = json.loads(f.read())
+        for k, v in config.items():
+            print(f"{k}: {v}")
         quantization = config.get("quantization", None)
 
     weight_files = glob.glob(str(model_path / "*.safetensors"))
@@ -179,10 +169,12 @@ def load(path_or_hf_repo: str, tokenizer_config={}):
             **quantization,
             class_predicate=class_predicate,
         )
+    print(f"Loaded model type: {type(model)}")
 
     model.load_weights(list(weights.items()))
 
     mx.eval(model.parameters())
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_path, **tokenizer_config
     )
@@ -192,6 +184,7 @@ def load(path_or_hf_repo: str, tokenizer_config={}):
 def generate(
     prompt: mx.array, model: nn.Module, temp: float = 0.0
 ) -> Generator[mx.array, None, None]:
+    print("Entering generate")
     """
     Generate text based on the given prompt and model.
 

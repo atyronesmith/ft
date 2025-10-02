@@ -4,6 +4,7 @@ Dataset management commands for the CLI.
 
 import json
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -17,7 +18,7 @@ console = Console()
 @app.command()
 def prepare(
     input_path: Path = typer.Argument(..., help="Path to input dataset"),
-    output_path: Path | None = typer.Option(None, "--output", "-o", help="Output path"),
+    output_path: Optional[Path] = typer.Option(None, "--output", "-o", help="Output path"),
     template: str = typer.Option(
         "alpaca", "--template", "-t", help="Template format (alpaca, chatml, llama)"
     ),
@@ -342,7 +343,7 @@ def stats(
 @app.command("list")
 def list_datasets(
     directory: Path = typer.Option(Path("./data"), "--dir", "-d", help="Directory to search"),
-    format: str | None = typer.Option(None, "--format", "-f", help="Filter by format"),
+    format: Optional[str] = typer.Option(None, "--format", "-f", help="Filter by format"),
 ):
     """List available datasets."""
     console.print("[bold cyan]📚 Available Datasets[/bold cyan]")

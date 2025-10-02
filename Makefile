@@ -384,7 +384,11 @@ test-generation-quick: ## Test latest model with simple wrapper script
 		exit 1; \
 	fi
 	@chmod +x scripts/test_latest_model.sh
-	@./scripts/test_latest_model.sh "$(FT_E2E_MODEL_ID)"
+	@if [ -n "$(FT_E2E_MODEL_ID)" ]; then \
+		./scripts/test_latest_model.sh "$(FT_E2E_MODEL_ID)"; \
+	else \
+		./scripts/test_latest_model.sh; \
+	fi
 	@echo "$(GREEN)✅ Quick generation test completed!$(NC)"
 
 lint: ## Run linting checks
@@ -501,34 +505,18 @@ create-dirs: ## Create necessary project directories
 init: create-dirs install ## Initialize project for first time
 	@echo "$(GREEN)Project initialized successfully!$(NC)"
 
-completion: ## Generate bash/zsh completion scripts
-	@echo "$(BLUE)Generating shell completion scripts...$(NC)"
-	@mkdir -p scripts/completion
-	@echo "# Bash completion for FineTune Makefile" > scripts/completion/ft-make-completion.bash
-	@echo "_ft_make_completion() {" >> scripts/completion/ft-make-completion.bash
-	@echo "    local cur targets" >> scripts/completion/ft-make-completion.bash
-	@echo "    COMPREPLY=()" >> scripts/completion/ft-make-completion.bash
-	@echo "    cur=\"\$${COMP_WORDS[COMP_CWORD]}\"" >> scripts/completion/ft-make-completion.bash
-	@echo "    targets=\$$(make -qp | awk -F':' '/^[a-zA-Z0-9][^$$#\/\\t=]*:([^=]|$$)/ {split(\$$1,A,/ /);for(i in A)print A[i]}' | sort -u)" >> scripts/completion/ft-make-completion.bash
-	@echo "    COMPREPLY=( \$$(compgen -W \"\$$targets\" -- \$$cur) )" >> scripts/completion/ft-make-completion.bash
-	@echo "    return 0" >> scripts/completion/ft-make-completion.bash
-	@echo "}" >> scripts/completion/ft-make-completion.bash
-	@echo "complete -F _ft_make_completion make" >> scripts/completion/ft-make-completion.bash
-	@echo "" >> scripts/completion/ft-make-completion.bash
-	@echo "# Zsh completion for FineTune Makefile" > scripts/completion/ft-make-completion.zsh
-	@echo "#compdef make" >> scripts/completion/ft-make-completion.zsh
-	@echo "_make_targets() {" >> scripts/completion/ft-make-completion.zsh
-	@echo "    local targets" >> scripts/completion/ft-make-completion.zsh
-	@echo "    targets=(\$$(make -qp | awk -F':' '/^[a-zA-Z0-9][^$$#\/\\t=]*:([^=]|$$)/ {split(\$$1,A,/ /);for(i in A)print A[i]}' | sort -u))" >> scripts/completion/ft-make-completion.zsh
-	@echo "    _describe 'make targets' targets" >> scripts/completion/ft-make-completion.zsh
-	@echo "}" >> scripts/completion/ft-make-completion.zsh
-	@echo "_make_targets" >> scripts/completion/ft-make-completion.zsh
-	@echo "" >> scripts/completion/ft-make-completion.zsh
-	@echo "$(GREEN)Completion scripts generated in scripts/completion/$(NC)"
-	@echo "$(YELLOW)To enable bash completion, add to your ~/.bashrc:$(NC)"
-	@echo "  source $(PWD)/scripts/completion/ft-make-completion.bash"
-	@echo "$(YELLOW)To enable zsh completion, add to your ~/.zshrc:$(NC)"
-	@echo "  source $(PWD)/scripts/completion/ft-make-completion.zsh"
+completion: ## Check shell completion scripts status
+	@echo "$(BLUE)Checking shell completion scripts...$(NC)"
+	@if [ -f "scripts/completion/ft-make-completion.bash" ] && [ -f "scripts/completion/ft-make-completion.zsh" ]; then \
+		echo "$(GREEN)✅ Completion scripts exist in scripts/completion/$(NC)"; \
+		echo "$(YELLOW)To enable bash completion, add to your ~/.bashrc:$(NC)"; \
+		echo "  source $(PWD)/scripts/completion/ft-make-completion.bash"; \
+		echo "$(YELLOW)To enable zsh completion, add to your ~/.zshrc:$(NC)"; \
+		echo "  source $(PWD)/scripts/completion/ft-make-completion.zsh"; \
+	else \
+		echo "$(RED)❌ Completion scripts missing$(NC)"; \
+		echo "$(YELLOW)Completion scripts should be manually maintained in scripts/completion/$(NC)"; \
+	fi
 
 completion-install: completion ## Install completion scripts for current user
 	@echo "$(BLUE)Installing completion scripts...$(NC)"

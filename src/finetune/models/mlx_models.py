@@ -171,31 +171,33 @@ if MLX_AVAILABLE:
 
             return out, cache
 
-    class MLXLlamaModel(nn.Module, BaseModel):
-        """Llama model implementation in MLX."""
+    class LlamaModel(nn.Module):
+        """Inner nested model matching MLX structure exactly.
+
+        This class contains the core transformer components (layers, embeddings, norm)
+        and matches the nested structure used in MLX examples.
+        """
 
         def __init__(self, config: ModelConfig):
-            nn.Module.__init__(self)
-            BaseModel.__init__(self, config)
+            super().__init__()
 
+            # Core transformer components (nested under 'model' in MLX structure)
             self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
             self.layers = [TransformerBlock(config) for _ in range(config.num_hidden_layers)]
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
-            # Output projection
-            if config.tie_word_embeddings:
-                self.lm_head = None  # Will use embed_tokens.weight.T
-            else:
-                self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+            # Store config for reference
+            self.num_hidden_layers = config.num_hidden_layers
+            self.vocab_size = config.vocab_size
 
-        def forward(
+        def __call__(
             self,
             input_ids: mx.array,
             mask: mx.array | None = None,
             cache: list | None = None,
             offset: int = 0,
         ) -> tuple[mx.array, list]:
-            """Forward pass through the model."""
+            """Forward pass through the nested model components."""
             # Token embeddings
             h = self.embed_tokens(input_ids)
 
@@ -216,13 +218,94 @@ if MLX_AVAILABLE:
             # Final norm
             h = self.norm(h)
 
-            # Output projection
+            return h, new_cache
+
+        def update(self, parameters: dict):
+            """Custom update method to handle list-based layers in nested model."""
+            # Separate layer parameters from top-level parameters
+            layer_params = {}
+            top_level_params = {}
+
+            for key, value in parameters.items():
+                if key == "layers":
+                    layer_params = value
+                else:
+                    top_level_params[key] = value
+
+            # Update top-level parameters (embed_tokens, norm) using the parent method
+            if top_level_params:
+                super().update(top_level_params)
+
+            # Update each layer individually from the nested dictionary or list
+            if layer_params:
+                if isinstance(layer_params, dict):
+                    # Normal case: dict mapping layer indices to weights
+                    for i, layer_weights in layer_params.items():
+                        try:
+                            layer_index = int(i)
+                            if layer_index < len(self.layers):
+                                self.layers[layer_index].update(layer_weights)
+                        except ValueError:
+                            # Skip non-numeric keys (e.g., 'layers' metadata)
+                            continue
+                elif isinstance(layer_params, list):
+                    # After LoRA: list of layer weight dicts
+                    for layer_index, layer_weights in enumerate(layer_params):
+                        if layer_index < len(self.layers) and isinstance(layer_weights, dict):
+                            self.layers[layer_index].update(layer_weights)
+
+        def parameters(self):
+            """Return all parameters for the nested model, including layers."""
+            # Start with parameters from the base Module (embed_tokens, norm)
+            params = dict(super().parameters())
+
+            # Manually add the parameters from each layer in the list
+            for i, layer in enumerate(self.layers):
+                params[f"layers.{i}"] = dict(layer.parameters())
+
+            return params
+
+    class MLXLlamaModel(nn.Module, BaseModel):
+        """Llama model implementation in MLX with nested structure.
+
+        This matches the MLX example structure exactly:
+        - model: LlamaModel (contains layers, embed_tokens, norm)
+        - lm_head: nn.Linear (at top level)
+
+        Parameter names will be: model.layers.X.Y.Z and lm_head.weight
+        """
+
+        def __init__(self, config: ModelConfig):
+            nn.Module.__init__(self)
+            BaseModel.__init__(self, config)
+
+            # Create nested model structure (MLX pattern)
+            self.model = LlamaModel(config)
+
+            # lm_head stays at top level (MLX pattern)
+            if config.tie_word_embeddings:
+                self.lm_head = None  # Will use embed_tokens.weight.T
+            else:
+                self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        def forward(
+            self,
+            input_ids: mx.array,
+            mask: mx.array | None = None,
+            cache: list | None = None,
+            offset: int = 0,
+        ) -> tuple[mx.array, list]:
+            """Forward pass through the model using nested structure."""
+            # Pass through nested model components
+            h, cache = self.model(input_ids, mask, cache, offset)
+
+            # Output projection (at top level)
             if self.lm_head is not None:
                 logits = self.lm_head(h)
             else:
-                logits = h @ self.embed_tokens.weight.T
+                logits = h @ self.model.embed_tokens.weight.T
 
-            return logits, new_cache
+            return logits, cache
 
         def __call__(self, input_ids: mx.array, cache: list | None = None, **kwargs) -> tuple[mx.array, list]:
             """Call method to make the model callable like MLX examples."""
@@ -342,47 +425,53 @@ if MLX_AVAILABLE:
             return get_lora_trainable_params(self)
 
         def update(self, parameters: dict):
-            """Custom update method to handle list-based layers."""
-            # Separate layer parameters from top-level parameters
-            layer_params = {}
+            """Custom update method to handle nested model structure."""
+            # Separate model parameters from top-level parameters
+            model_params = {}
             top_level_params = {}
+
             for key, value in parameters.items():
-                if key == "layers":
-                    layer_params = value
+                if key == "model":
+                    model_params = value
                 else:
                     top_level_params[key] = value
 
-            # Update top-level parameters using the parent method
+            # Update top-level parameters (like lm_head) using the parent method
             if top_level_params:
                 super().update(top_level_params)
 
-            # Update each layer individually from the nested dictionary or list
-            if layer_params:
-                if isinstance(layer_params, dict):
-                    # Normal case: dict mapping layer indices to weights
-                    for i, layer_weights in layer_params.items():
-                        layer_index = int(i)
-                        if layer_index < len(self.layers):
-                            self.layers[layer_index].update(layer_weights)
-                elif isinstance(layer_params, list):
-                    # After LoRA: list of layer weight dicts
-                    for layer_index, layer_weights in enumerate(layer_params):
-                        if layer_index < len(self.layers) and isinstance(layer_weights, dict):
-                            self.layers[layer_index].update(layer_weights)
+            # Update nested model parameters
+            if model_params:
+                self.model.update(model_params)
 
         def parameters(self):
-            """Return all parameters for the model, including nested layers."""
-            # Start with parameters from the base Module (e.g., embed_tokens, norm, lm_head)
+            """Return all parameters with nested structure (MLX-compatible naming)."""
+            # Get top-level parameters (like lm_head)
             params = dict(super().parameters())
 
-            # Manually add the parameters from each layer in the list
-            for i, layer in enumerate(self.layers):
-                params[f"layers.{i}"] = dict(layer.parameters())
+            # Add nested model parameters with 'model.' prefix
+            params["model"] = self.model.parameters()
 
             return params
 
         def named_parameters(self):
             return [(name, param) for name, param in self.parameters().items()]
+
+        # Backward compatibility properties
+        @property
+        def layers(self):
+            """Backward compatibility: redirect to nested model layers."""
+            return self.model.layers
+
+        @property
+        def embed_tokens(self):
+            """Backward compatibility: redirect to nested model embed_tokens."""
+            return self.model.embed_tokens
+
+        @property
+        def norm(self):
+            """Backward compatibility: redirect to nested model norm."""
+            return self.model.norm
 
     class GPTTransformerBlock(nn.Module):
         """GPT-2 style transformer block with proper parameter naming."""
@@ -432,7 +521,7 @@ if MLX_AVAILABLE:
             v = v.reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
 
             # Attention
-            scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) / mx.sqrt(self.head_dim)
+            scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) / math.sqrt(self.head_dim)
 
             # Causal mask
             mask = mx.triu(mx.ones((L, L)), k=1) * -1e9

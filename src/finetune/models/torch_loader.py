@@ -91,13 +91,14 @@ class PyTorchModel(BaseModel):
 class PyTorchModelLoader(ModelLoader):
     """Loader for PyTorch/HuggingFace models."""
 
-    def __init__(self, cache_dir: Path | None = None):
+    def __init__(self, cache_dir: Path):
         if not TORCH_AVAILABLE:
             raise ImportError(
                 "PyTorch is not installed. Please install with: pip install torch transformers"
             )
 
-        self.cache_dir = cache_dir or Path.home() / ".cache" / "finetune" / "models"
+        # Cache directory is provided by ModelManager
+        self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Set device

@@ -5,14 +5,14 @@ Generation test script for the most recent trained model.
 This script:
 1. Finds the most recent training run
 2. Loads the base model + LoRA weights
-3. Tests generation on 100 capital questions
+3. Tests generation on the ACTUAL training/validation questions used during training
 4. Reports accuracy and performance metrics
 
 Usage:
     python scripts/test_model_generation.py [base_model_name] [test_data_dir]
 
 Example:
-    python scripts/test_model_generation.py microsoft/DialoGPT-small /tmp/test_runs
+    python scripts/test_model_generation.py TinyLlama/TinyLlama-1.1B-Chat-v1.0 /tmp/test_runs
 """
 
 import json
@@ -23,6 +23,9 @@ from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# Add MLX official comparison path for native utilities
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dev", "experiments", "mlx_official_comparison"))
 
 
 def find_most_recent_training_run(base_dir: Path) -> Path | None:
@@ -48,100 +51,249 @@ def find_most_recent_training_run(base_dir: Path) -> Path | None:
     return training_runs[0][1]
 
 
-def load_model_with_lora(base_model_name: str, lora_weights_path: Path):
-    """Load the base model and apply LoRA weights using the SAME approach as training."""
-    from finetune.training.lora import LoRAConfig, load_lora_weights
-    from finetune.training.workflow import create_quick_workflow
+def detect_base_model_from_training_log(training_run_dir: Path) -> str | None:
+    """Extract the base model name from training_log.json."""
+    training_log_path = training_run_dir / "training_log.json"
 
-    print(f"🤖 Loading base model: {base_model_name}")
+    if not training_log_path.exists():
+        return None
 
-    # Create a temporary workflow to load the model
-    temp_workflow = create_quick_workflow(
-        model_name=base_model_name,
-        data_file="dummy",  # Won't be used for generation
-        template="chatml",  # Use ChatML template to match training
-        output_dir="/tmp/dummy",
-    )
+    try:
+        with open(training_log_path, 'r', encoding='utf-8') as f:
+            log_data = json.load(f)
 
-    # CRITICAL FIX: Use the native tokenizer to match the updated training approach
-    # Training now uses native tokenizer to avoid vocabulary expansion issues
-    print("🔧 Loading model with native TinyLlama tokenizer (same as training)...")
-    from transformers import AutoTokenizer
+        model_id = log_data.get('model_id')
+        if model_id:
+            print(f"🔍 Auto-detected base model from training log: {model_id}")
+            return model_id
 
-    # Load model with native tokenizer (SAME AS TRAINING - no vocabulary expansion)
-    temp_workflow.model, temp_workflow.tokenizer, _ = temp_workflow.model_manager.load_model(
-        base_model_name,
-        load_in_4bit=temp_workflow.config.model.load_in_4bit,
-    )
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"⚠️  Could not parse training log: {e}")
+        return None
 
-    # Set pad token if needed (SAME AS TRAINING)
-    if temp_workflow.tokenizer.pad_token_id is None:
-        temp_workflow.tokenizer.pad_token = temp_workflow.tokenizer.eos_token
-    model = temp_workflow.model
-    print(f"✅ Model loaded with native vocabulary: {len(temp_workflow.tokenizer.get_vocab())} tokens (matching training)")
+    return None
 
-    print("🔧 Adding LoRA layers to model using SAME pattern as training...")
-    # CRITICAL FIX: Use the EXACT same LoRA application pattern as training
-    # Training applies LoRA manually to specific layers only
-    from finetune.training.lora import LoRALinear
 
-    lora_config = LoRAConfig(
-        r=temp_workflow.config.lora.r,
-        alpha=temp_workflow.config.lora.alpha,
-        dropout=temp_workflow.config.lora.dropout,
-        target_modules=temp_workflow.config.lora.target_modules,
-    )
+def detect_lora_config_from_training(training_run_dir: Path) -> dict | None:
+    """Extract the actual LoRA configuration used during training."""
+    lora_config_path = training_run_dir / "final_model" / "lora_config.json"
 
-    # Freeze entire model first (MLX examples pattern)
+    if not lora_config_path.exists():
+        print(f"⚠️  No lora_config.json found at {lora_config_path}")
+        return None
+
+    try:
+        with open(lora_config_path, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+
+        # Calculate scale from alpha and rank
+        alpha = config_data.get('alpha', 16)
+        rank = config_data.get('r', 8)
+        scale = alpha / rank
+
+        print(f"🔍 Auto-detected LoRA config: rank={rank}, alpha={alpha}, scale={scale:.1f}")
+        return {
+            'rank': rank,
+            'alpha': alpha,
+            'scale': scale,
+            'dropout': config_data.get('dropout', 0.0),
+            'target_modules': config_data.get('target_modules', ['q_proj', 'v_proj'])
+        }
+
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"⚠️  Could not parse LoRA config: {e}")
+        return None
+
+
+def load_model_with_lora(base_model_name: str, adapter_path: Path):
+    """Load the base model and apply LoRA weights using MLX-native approach."""
+    # Import MLX native utilities (same as working script)
+    import utils as lora_utils
+    from models import LoRALinear
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+
+    print(f"🤖 Loading base model using MLX-native approach: {base_model_name}")
+
+    # Use MLX-native model loading (same as working script)
+    model, tokenizer, config = lora_utils.load(base_model_name)
+
+    print(f"✅ Model loaded with vocabulary: {len(tokenizer.get_vocab())} tokens")
+
+    print("🔧 Adding LoRA layers using MLX-native pattern...")
+
+    # Freeze entire model first (exactly like working script)
     model.freeze()
 
-    # Apply LoRA to ONLY the last 16 layers (SAME as training)
+    # Apply LoRA to last 16 layers (MLX example default)
     lora_layers = 16
-    layers = model.layers  # TinyLlama has model.layers
+
+    # Use same pattern as working script: model.model.layers (not model.layers)
+    layers = model.model.layers
     start_layer = len(layers) - lora_layers
 
     print(f"Applying LoRA to layers {start_layer} through {len(layers)-1} (last {lora_layers} layers)")
 
-    for layer_idx in range(start_layer, len(layers)):
-        layer = layers[layer_idx]
+    # Apply LoRA using EXACT same pattern as working script
+    for l in layers[start_layer:]:
+        l.self_attn.q_proj = LoRALinear.from_linear(l.self_attn.q_proj)
+        l.self_attn.v_proj = LoRALinear.from_linear(l.self_attn.v_proj)
+        if hasattr(l, "block_sparse_moe"):
+            l.block_sparse_moe.gate = LoRALinear.from_linear(l.block_sparse_moe.gate)
 
-        # Apply to q_proj and v_proj ONLY (SAME as training)
-        if hasattr(layer, "self_attn"):
-            if hasattr(layer.self_attn, "q_proj"):
-                layer.self_attn.q_proj = LoRALinear.from_linear(
-                    layer.self_attn.q_proj, rank=lora_config
-                )
-                print(f"Applied LoRA to layer {layer_idx} q_proj (scale={lora_config.scaling})")
+    # Print parameter count (same as working script)
+    p = sum(v.size for _, v in tree_flatten(model.parameters())) / 10**6
+    print(f"Total parameters {p:.3f}M")
+    p = sum(v.size for _, v in tree_flatten(model.trainable_parameters())) / 10**6
+    print(f"Trainable parameters {p:.3f}M")
 
-            if hasattr(layer.self_attn, "v_proj"):
-                layer.self_attn.v_proj = LoRALinear.from_linear(
-                    layer.self_attn.v_proj, rank=lora_config
-                )
-                print(f"Applied LoRA to layer {layer_idx} v_proj (scale={lora_config.scaling})")
+    print(f"📥 Loading LoRA weights from: {adapter_path}")
 
-    print(f"📥 Loading LoRA weights from: {lora_weights_path}")
+    # Load adapter weights using MLX-native approach (same as working script)
+    model.load_weights(str(adapter_path), strict=False)
+    print("✅ LoRA weights loaded using MLX-native approach")
 
-    # Load the trained LoRA weights
-    load_lora_weights(model, lora_weights_path)
-
-    print("✅ Model loaded with LoRA weights applied")
-
-    return model, temp_workflow.tokenizer
+    return model, tokenizer
 
 
-def generate_100_capital_questions() -> list[tuple[str, str]]:
-    """Generate world capital questions using common utilities for consistency."""
-    from finetune.utils.chat import get_geography_questions
+def load_training_data_questions(training_run_path: str = None, use_validation: bool = True, dataset_name: str = "mlx_examples") -> list[tuple[str, str, str]]:
+    """
+    Load questions from standardized dataset or training run data.
 
-    # Use common utility to get questions with test countries prioritized
-    return get_geography_questions(max_count=100, prioritize_test_countries=True)
+    Args:
+        training_run_path: Path to specific training run (legacy support)
+        use_validation: Whether to use validation or training split
+        dataset_name: Name of standardized dataset to use
+
+    Returns:
+        List of (question, expected_answer, table_context) tuples
+    """
+    # Try to use standardized data loader first
+    if training_run_path is None:
+        try:
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+            from finetune.data.loaders import load_valid_data, load_train_data
+
+            print(f"📖 Loading questions from standardized dataset: {dataset_name}")
+
+            if use_validation:
+                data = load_valid_data(dataset_name)
+                print(f"✅ Loaded {len(data)} validation questions from {dataset_name}")
+            else:
+                data = load_train_data(dataset_name)
+                print(f"✅ Loaded {len(data)} training questions from {dataset_name}")
+
+            questions = []
+            for item in data:
+                if "messages" in item:
+                    # Chat format
+                    messages = item["messages"]
+                    user_msg = None
+                    assistant_msg = None
+
+                    for msg in messages:
+                        if msg.get('role') == 'user':
+                            user_msg = msg.get('content', '').strip()
+                        elif msg.get('role') == 'assistant':
+                            assistant_msg = msg.get('content', '').strip()
+
+                    if user_msg and assistant_msg:
+                        # Extract expected answer
+                        expected = assistant_msg
+                        if " is " in expected:
+                            parts = expected.split(" is ")
+                            if len(parts) >= 2:
+                                expected = parts[-1].rstrip('.').strip()
+                        questions.append((user_msg, expected, ""))
+
+                elif "text" in item:
+                    # MLX text format - extract table context, Q: and A: parts
+                    text = item["text"]
+                    if "Q: " in text and "A: " in text:
+                        # Split on Q: to get table context and question/answer
+                        parts = text.split("Q: ")
+                        if len(parts) >= 2:
+                            table_context = parts[0].strip()  # Everything before "Q:"
+                            q_and_a = parts[-1]  # Get the last Q: part
+                            if "A: " in q_and_a:
+                                q_part, a_part = q_and_a.split("A: ", 1)
+                                question = q_part.strip()
+                                answer = a_part.strip()
+                                questions.append((question, answer, table_context))
+
+            return questions
+
+        except Exception as e:
+            print(f"⚠️  Could not load from standardized dataset: {e}")
+            if training_run_path is None:
+                raise
+
+    # Legacy fallback: load from training run directory
+    import json
+    from pathlib import Path
+
+    training_path = Path(training_run_path)
+
+    # Use validation data first (smaller, more focused), fall back to training data
+    data_file = training_path / "data" / ("val.jsonl" if use_validation else "train.jsonl")
+
+    if not data_file.exists():
+        # Try the other file if preferred doesn't exist
+        alt_file = training_path / "data" / ("train.jsonl" if use_validation else "val.jsonl")
+        if alt_file.exists():
+            data_file = alt_file
+            print(f"⚠️  Using {'training' if use_validation else 'validation'} data instead")
+        else:
+            raise FileNotFoundError(f"No training data found in {training_path / 'data'}")
+
+    questions = []
+
+    print(f"📖 Loading questions from: {data_file}")
+
+    with open(data_file, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f, 1):
+            try:
+                data = json.loads(line.strip())
+                messages = data.get('messages', [])
+
+                # Extract user question and assistant answer
+                user_msg = None
+                assistant_msg = None
+
+                for msg in messages:
+                    if msg.get('role') == 'user':
+                        user_msg = msg.get('content', '').strip()
+                    elif msg.get('role') == 'assistant':
+                        assistant_msg = msg.get('content', '').strip()
+
+                if user_msg and assistant_msg:
+                    # Extract the expected answer (e.g., "The capital of France is Paris." -> "Paris")
+                    expected = assistant_msg
+                    # Try to extract just the city name if it follows the pattern
+                    if " is " in expected:
+                        parts = expected.split(" is ")
+                        if len(parts) >= 2:
+                            # Get the part after "is" and clean it up
+                            expected = parts[-1].rstrip('.').strip()
+
+                    questions.append((user_msg, expected, ""))
+
+            except json.JSONDecodeError as e:
+                print(f"⚠️  Skipping malformed line {line_num}: {e}")
+                continue
+
+    print(f"✅ Loaded {len(questions)} questions from training data")
+    return questions
 
 
 def generate_answer(
-    model, tokenizer, question: str, max_tokens: int = 20, debug: bool = True
+    model, tokenizer, question: str, table_context: str = "", max_tokens: int = 50, debug: bool = True
 ) -> str:
-    """Generate an answer using the fine-tuned model with detailed debugging."""
+    """Generate an answer using MLX-native generation approach (same as working script)."""
     import signal
+    import utils as lora_utils
+    import mlx.core as mx
 
     def timeout_handler(signum, frame):
         raise TimeoutError("Generation timed out")
@@ -150,43 +302,58 @@ def generate_answer(
         # Set a 30-second timeout for generation
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(30)
-        from finetune.inference.generation import GenerationConfig, generate_text
 
         if debug:
             print(f"\n{'='*60}")
             print(f"🔍 GENERATION DEBUG for: {question}")
             print(f"{'='*60}")
 
-        # Use more conservative settings to avoid hanging
-        config = GenerationConfig(
-            max_tokens=max_tokens,
-            temperature=0.7,  # Higher temperature for more diverse generation
-            top_p=0.95,
-            verbose=debug,  # Enable verbose for debug mode
-            stop_on_eos=True,  # Allow stopping on EOS to prevent hanging
-            stop_on_special_tokens=True  # Allow stopping on special tokens
-        )
-
-        # CRITICAL FIX: Use common utility to ensure same prompt format as training
-        from finetune.utils.chat import apply_chat_template_for_inference
-
-        # Get the exact prompt that will be sent to the model (with system message)
-        prompt = apply_chat_template_for_inference(tokenizer, question)
+        # Use original table context from training data if available, otherwise use default
+        if table_context:
+            prompt = f"{table_context}\nQ: {question}\nA: "
+        else:
+            # Fallback for chat format or missing context
+            prompt = f"table: 1-10015132-16\ncolumns: Player, No., Nationality, Position, Years in Toronto, School/Club Team\nQ: {question}\nA: "
 
         if debug:
-            print(
-                f"📝 Prompt preview: {prompt[:100]}..."
-                if len(prompt) > 100
-                else f"📝 Prompt: {prompt}"
-            )
-            input_ids = tokenizer.encode(prompt, add_special_tokens=False)
-            print(f"🔢 Input tokens: {len(input_ids)}")
+            print(f"📝 Prompt: {prompt}")
 
-        # Generate the response using the properly formatted prompt
-        response = generate_text(model, tokenizer, prompt, config)
+        # Use MLX-native generation (EXACT same approach as working script)
+        print(prompt, end="", flush=True)
+
+        prompt_array = mx.array(tokenizer.encode(prompt))
+
+        tokens = []
+        skip = 0
+
+        # Use lora_utils.generate() with same parameters as working script (temp=0.8)
+        for token, n in zip(
+            lora_utils.generate(prompt_array, model, temp=0.8),
+            range(max_tokens),
+        ):
+            if token == tokenizer.eos_token_id:
+                break
+
+            tokens.append(token.item())
+            s = tokenizer.decode(tokens)
+            if len(s) - skip > 1:
+                print(s[skip:-1], end="", flush=True)
+                skip = len(s) - 1
+
+        # Final decode and print
+        final_response = tokenizer.decode(tokens)[skip:]
+        print(final_response, flush=True)
+        print("=" * 10)
+
+        if len(tokens) == 0:
+            print("No tokens generated for this prompt")
+            response = ""
+        else:
+            response = tokenizer.decode(tokens)
 
         if debug:
-            print(f"🤖 Response: '{response}'")
+            print(f"🤖 Final Response: '{response}'")
+            print(f"{'='*60}")
 
         # Clear the alarm
         signal.alarm(0)
@@ -208,13 +375,13 @@ def generate_answer(
         return error_msg
 
 
-def evaluate_accuracy(questions: list[tuple[str, str]], answers: list[str]) -> dict:
+def evaluate_accuracy(questions: list[tuple[str, str, str]], answers: list[str]) -> dict:
     """Evaluate the accuracy of generated answers."""
     correct = 0
     partial = 0
     results = []
 
-    for i, ((question, expected), generated) in enumerate(zip(questions, answers, strict=False)):
+    for i, ((question, expected, table_context), generated) in enumerate(zip(questions, answers, strict=False)):
         # Check for exact match (case insensitive)
         expected_lower = expected.lower()
         generated_lower = generated.lower()
@@ -277,11 +444,16 @@ def main():
     """Main test function."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Test model generation on capital questions")
+    parser = argparse.ArgumentParser(description="Test model generation on actual training questions")
     parser.add_argument(
         "--base-model",
-        default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        help="Base model name (default: TinyLlama/TinyLlama-1.1B-Chat-v1.0)",
+        default=None,
+        help="Base model name (if not provided, will auto-detect from most recent training run)",
+    )
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        help="Path to adapter.npz file (if not provided, will use adapter from most recent training run)",
     )
     parser.add_argument(
         "--test-dir",
@@ -294,6 +466,9 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable detailed debugging output")
     parser.add_argument(
         "--limit", type=int, default=100, help="Limit number of questions to test (default: 100)"
+    )
+    parser.add_argument(
+        "--max-tokens", type=int, default=50, help="Maximum tokens to generate (default: 50, same as working script)"
     )
 
     args = parser.parse_args()
@@ -324,18 +499,50 @@ def main():
     print(f"📁 Most recent training run: {most_recent.parent.name}")
     print(f"📅 Model path: {most_recent}")
 
+    # Auto-detect base model if not provided
+    base_model = args.base_model
+    if base_model is None:
+        training_run_dir = most_recent.parent  # Go from final_model back to run-XXXXX
+        base_model = detect_base_model_from_training_log(training_run_dir)
+        if base_model is None:
+            print("❌ Could not auto-detect base model from training log!")
+            print(f"   Please specify --base-model manually")
+            return 1
+
+    # Determine adapter path
+    adapter_path = args.adapter
+    if adapter_path is None:
+        # Use default location from most recent training run
+        adapter_path = most_recent / "lora_weights.npz"
+        print(f"🔧 Using adapter from training run: {adapter_path}")
+    else:
+        adapter_path = Path(adapter_path)
+        print(f"🔧 Using specified adapter: {adapter_path}")
+
+    if not adapter_path.exists():
+        print(f"❌ Adapter file not found: {adapter_path}")
+        return 1
+
     # Load model with LoRA weights
     try:
-        model, tokenizer = load_model_with_lora(args.base_model, most_recent / "lora_weights.npz")
+        model, tokenizer = load_model_with_lora(base_model, adapter_path)
     except Exception as e:
         print(f"❌ Failed to load model: {e}")
         return 1
 
-    # Generate test questions
-    print("📝 Generating capital questions...")
-    all_questions = generate_100_capital_questions()
+    # Load questions from standardized dataset first, fall back to training run data
+    print("📝 Loading questions from data...")
+    try:
+        # Try standardized dataset first
+        all_questions = load_training_data_questions(training_run_path=None, use_validation=True, dataset_name="mlx_examples")
+    except Exception as e:
+        print(f"⚠️  Could not load standardized dataset: {e}")
+        print("📝 Falling back to training run data...")
+        # Fallback to training run data
+        training_run_dir = most_recent.parent  # Go from final_model back to run-XXXXX
+        all_questions = load_training_data_questions(str(training_run_dir), use_validation=True)
     questions = all_questions[: args.limit]  # Limit questions if specified
-    print(f"✅ Generated {len(questions)} questions (limited from {len(all_questions)})")
+    print(f"✅ Loaded {len(questions)} questions from training data (limited from {len(all_questions)})")
 
     if args.debug:
         print("🔧 Debug mode enabled - detailed output for each question")
@@ -349,7 +556,7 @@ def main():
     start_time = time.time()
 
     answers = []
-    for i, (question, expected) in enumerate(questions):
+    for i, (question, expected, table_context) in enumerate(questions):
         if not args.debug and i % 10 == 0:  # Progress every 10 questions (unless in debug mode)
             print(f"   Progress: {i}/{len(questions)} questions processed...")
 
@@ -357,7 +564,7 @@ def main():
             print(f"\n🎯 Question {i+1}/{len(questions)}: Testing '{question}'")
             print(f"🎯 Expected answer: '{expected}'")
 
-        answer = generate_answer(model, tokenizer, question, debug=args.debug)
+        answer = generate_answer(model, tokenizer, question, table_context, max_tokens=args.max_tokens, debug=args.debug)
         answers.append(answer)
 
         if args.debug:

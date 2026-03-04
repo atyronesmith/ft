@@ -44,7 +44,7 @@ uvicorn = {extras = ["standard"], version = "^0.24.0"}
 streamlit = {version = "^1.29.0", optional = true}
 python-multipart = "^0.0.6"
 websockets = "^12.0.0"
-aiofiles = "^23.2.0"
+aiofiles = "^25.1.0"
 
 # CLI
 typer = {extras = ["all"], version = "^0.9.0"}

@@ -39,7 +39,7 @@ sentencepiece = "^0.1.99"
 bitsandbytes = {version = "^0.41.0", optional = true}
 
 # Web and API
-fastapi = "^0.104.0"
+fastapi = "^0.135.1"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 streamlit = {version = "^1.29.0", optional = true}
 python-multipart = "^0.0.6"

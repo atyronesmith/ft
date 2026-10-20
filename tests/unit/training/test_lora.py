@@ -5,19 +5,10 @@ Tests are written first following TDD approach to drive the implementation
 of MLX-native LoRA layers for efficient fine-tuning.
 """
 
-
 import mlx.core as mx
 import pytest
-
-from finetune.training.lora import (
-    LoRAConfig,
-)
-from finetune.training.lora import (
-    LoRALinear as MLXLoRALinear,  # Alias for consistency with test names
-)
-from finetune.training.lora import (
-    ,
-)
+from finetune.training.lora import LoRAConfig
+from finetune.training.lora import LoRALinear as MLXLoRALinear  # alias matches test names
 
 
 class TestLoRAConfig:

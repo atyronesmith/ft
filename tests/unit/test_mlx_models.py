@@ -61,7 +61,7 @@ class TestMLXModels:
         batch_size, seq_len = 2, 10
         x = mx.random.normal((batch_size, seq_len, small_config.hidden_size))
 
-        output = attn(x)
+        output, _cache = attn(x)
 
         assert output.shape == (batch_size, seq_len, small_config.hidden_size)
 
@@ -80,7 +80,7 @@ class TestMLXModels:
         # Create causal mask
         mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
 
-        output = attn(x, mask=mask)
+        output, _cache = attn(x, mask=mask)
 
         assert output.shape == (batch_size, seq_len, small_config.hidden_size)
 
@@ -108,7 +108,7 @@ class TestMLXModels:
 
         # Test forward pass
         x = mx.random.normal((2, 10, small_config.hidden_size))
-        output = block(x)
+        output, _cache = block(x)
 
         assert output.shape == x.shape
 
@@ -136,7 +136,7 @@ class TestMLXModels:
         input_ids = mx.random.randint(0, small_config.vocab_size, (batch_size, seq_len))
 
         # Forward pass
-        logits = model.forward(input_ids)
+        logits, _cache = model.forward(input_ids)
 
         assert logits.shape == (batch_size, seq_len, small_config.vocab_size)
 
@@ -194,8 +194,8 @@ class TestMLXModels:
         # Verify weights are loaded (just check they have same structure)
         # Can't easily compare nested dicts/lists, so just verify model works
         input_ids = mx.random.randint(0, small_config.vocab_size, (1, 5))
-        original_output = model.forward(input_ids)
-        loaded_output = new_model.forward(input_ids)
+        original_output, _ = model.forward(input_ids)
+        loaded_output, _ = new_model.forward(input_ids)
         assert original_output.shape == loaded_output.shape
 
     @pytest.mark.requires_mlx

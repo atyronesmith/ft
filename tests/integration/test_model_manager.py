@@ -209,6 +209,7 @@ class TestModelManager:
             "gpt2",
             load_in_4bit=True,
             load_in_8bit=False,
+            tokenizer=None,
         )
 
     def test_delete_model(self, manager, temp_dir):

@@ -320,7 +320,7 @@ strict = true
 **`Makefile`** ✅ COMPLETE - Organized Development Commands
 ```makefile
 # Environment & Setup (9 commands)
-.PHONY: poetry-check install dev install-all update lock shell create-dirs init
+.PHONY: uv-check install dev install-all update lock create-dirs init
 
 # Testing (6 commands)
 .PHONY: test test-unit test-base test-integration test-lora test-lora-quick

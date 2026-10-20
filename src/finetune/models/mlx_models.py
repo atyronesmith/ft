@@ -9,6 +9,7 @@ try:
     import mlx
     import mlx.core as mx
     import mlx.nn as nn
+    from mlx.utils import tree_flatten
 
     MLX_AVAILABLE = True
 except ImportError:
@@ -324,8 +325,8 @@ if MLX_AVAILABLE:
 
         @property
         def num_parameters(self) -> int:
-            """Get total number of parameters."""
-            return sum(v.size for v in self.parameters().values() if hasattr(v, "size"))
+            """Get total number of parameters (all leaves of the nested tree)."""
+            return sum(v.size for _, v in tree_flatten(self.parameters()))
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""
@@ -557,24 +558,8 @@ if MLX_AVAILABLE:
 
         @property
         def num_parameters(self) -> int:
-            """Get total number of parameters."""
-            total = 0
-
-            def count_params(params):
-                nonlocal total
-                for k, v in params.items():
-                    if isinstance(v, dict):
-                        count_params(v)
-                    elif isinstance(v, list):
-                        # Handle lists of modules (like layers)
-                        for item in v:
-                            if hasattr(item, "parameters"):
-                                count_params(dict(item.parameters()))
-                    elif hasattr(v, "size"):
-                        total += v.size
-
-            count_params(dict(self.parameters()))
-            return total
+            """Get total number of parameters (all leaves of the nested tree)."""
+            return sum(v.size for _, v in tree_flatten(self.parameters()))
 
         def add_lora(self, lora_config: LoRAConfig) -> None:
             """Add LoRA adapters to the model."""

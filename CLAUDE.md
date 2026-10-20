@@ -112,11 +112,9 @@ FineTune is a modular fine-tuning application optimized for Apple Silicon that e
 # Automated setup (recommended)
 ./setup.sh
 
-# Manual setup
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-make dev
+# Manual setup (uv manages .venv and the lockfile)
+uv sync --all-groups
+uv run pre-commit install
 ```
 
 ### Development Workflow
@@ -464,7 +462,7 @@ When resuming work:
 3. **Update Dependencies**:
    ```bash
    git pull
-   pip install -e .
+   uv sync --all-groups
    ```
 
 4. **Run Quality Checks**:

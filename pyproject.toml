@@ -1,13 +1,11 @@
-[tool.poetry]
+[project]
 name = "finetune"
 version = "0.1.0"
 description = "Generic fine-tuning application optimized for Apple Silicon"
-authors = ["FineTune Team <finetune@example.com>"]
 readme = "README.md"
-license = "MIT"
-homepage = "https://github.com/yourusername/finetune"
-repository = "https://github.com/yourusername/finetune"
-documentation = "https://finetune.readthedocs.io"
+license = { text = "MIT" }
+authors = [{ name = "FineTune Team", email = "finetune@example.com" }]
+requires-python = ">=3.11"
 keywords = ["machine-learning", "fine-tuning", "llm", "mlx", "apple-silicon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -20,102 +18,101 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-packages = [{include = "finetune", from = "src"}]
 
-[tool.poetry.dependencies]
-python = "^3.11"
+# Bounds follow the old Poetry carets (>=x,<next major) except where a
+# Dependabot fix required crossing one (2026-10-20): transformers 5,
+# datasets 5, mlx 0.29, sentencepiece 0.2, pyarrow 21+, fastapi 0.133+,
+# python-multipart 0.0.31+.
+dependencies = [
+    # Core ML frameworks
+    "mlx>=0.29.4,<1.0 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torch>=2.1.0,<3.0",
+    "transformers>=5.10.1,<6.0",
+    "peft>=0.7.0,<1.0",
+    "datasets>=5.0.1,<6.0",
+    "accelerate>=0.25.0",
+    "tokenizers>=0.22.0,<1.0",
+    "sentencepiece>=0.2.1,<1.0",
+    # Web and API
+    "fastapi>=0.133.0,<1.0",
+    "uvicorn[standard]>=0.24.0,<1.0",
+    "python-multipart>=0.0.31,<1.0",
+    "websockets>=12.0.0,<13.0",
+    "aiofiles>=23.2.0,<24.0",
+    # CLI
+    "typer[all]>=0.9.0,<1.0",
+    "rich>=13.7.0,<14.0",
+    "questionary>=2.0.0,<3.0",
+    # Data processing
+    "pandas>=2.1.0,<3.0",
+    "pyarrow>=21.0.0",
+    "h5py>=3.10.0,<4.0",
+    "orjson>=3.9.0,<4.0",
+    "pyyaml>=6.0.1,<7.0",
+    # Configuration and validation
+    "pydantic>=2.5.0,<3.0",
+    "pydantic-settings>=2.1.0,<3.0",
+    "python-dotenv>=1.0.0,<2.0",
+    # Database
+    "sqlalchemy>=2.0.0,<3.0",
+    # Logging and monitoring
+    "loguru>=0.7.0,<1.0",
+    "tqdm>=4.66.0,<5.0",
+    "tensorboard>=2.15.0,<3.0",
+    # Visualization
+    "matplotlib>=3.8.0,<4.0",
+    # System utilities
+    "psutil>=5.9.0,<6.0",
+]
 
-# Core ML frameworks
-mlx = {version = "^0.29.4", markers = "sys_platform == 'darwin' and platform_machine == 'arm64'"}
-torch = "^2.1.0"
-transformers = "^5.10.0"
-peft = "^0.7.0"
-datasets = "^5.0.1"
-accelerate = "^0.25.0"
-tokenizers = "^0.22.0"
-sentencepiece = "^0.2.1"
+[project.optional-dependencies]
+ui = ["streamlit>=1.29.0,<2.0"]
+monitoring = ["wandb>=0.16.0,<1.0", "plotly>=5.18.0,<6.0"]
+config = ["hydra-core>=1.3.0,<2.0", "omegaconf>=2.3.0,<3.0"]
+db = ["alembic>=1.13.0,<2.0"]
+quantization = ["bitsandbytes>=0.41.0,<1.0"]
+all = [
+    "finetune[ui,monitoring,config,db,quantization]",
+]
 
-# Quantization (optional, may not work on all platforms)
-bitsandbytes = {version = "^0.41.0", optional = true}
-
-# Web and API
-fastapi = "^0.104.0"
-uvicorn = {extras = ["standard"], version = "^0.24.0"}
-streamlit = {version = "^1.29.0", optional = true}
-python-multipart = "^0.0.6"
-websockets = "^12.0.0"
-aiofiles = "^23.2.0"
-
-# CLI
-typer = {extras = ["all"], version = "^0.9.0"}
-rich = "^13.7.0"
-questionary = "^2.0.0"
-
-# Data processing
-pandas = "^2.1.0"
-pyarrow = "^21.0.0"
-h5py = "^3.10.0"
-orjson = "^3.9.0"
-pyyaml = "^6.0.1"
-
-# Configuration and validation
-pydantic = "^2.5.0"
-pydantic-settings = "^2.1.0"
-hydra-core = {version = "^1.3.0", optional = true}
-omegaconf = {version = "^2.3.0", optional = true}
-python-dotenv = "^1.0.0"
-
-# Database
-sqlalchemy = "^2.0.0"
-alembic = {version = "^1.13.0", optional = true}
-
-# Logging and monitoring
-loguru = "^0.7.0"
-tqdm = "^4.66.0"
-tensorboard = "^2.15.0"
-wandb = {version = "^0.16.0", optional = true}
-
-# Visualization
-matplotlib = "^3.8.0"
-plotly = {version = "^5.18.0", optional = true}
-
-# System utilities
-psutil = "^5.9.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-pytest-asyncio = "^0.21.0"
-pytest-cov = "^4.1.0"
-pytest-mock = "^3.12.0"
-hypothesis = "^6.92.0"
-ruff = "^0.1.0"
-black = "^23.12.0"
-mypy = "^1.7.0"
-pre-commit = "^3.6.0"
-ipykernel = "^6.27.0"
-notebook = "^7.0.0"
-
-[tool.poetry.group.docs.dependencies]
-mkdocs = "^1.5.0"
-mkdocs-material = "^9.5.0"
-mkdocstrings = {extras = ["python"], version = "^0.24.0"}
-pdoc = "^14.1.0"
-
-[tool.poetry.extras]
-ui = ["streamlit"]
-monitoring = ["wandb", "plotly"]
-config = ["hydra-core", "omegaconf"]
-db = ["alembic"]
-quantization = ["bitsandbytes"]
-all = ["streamlit", "wandb", "plotly", "hydra-core", "omegaconf", "alembic", "bitsandbytes"]
-
-[tool.poetry.scripts]
+[project.scripts]
 ft = "finetune.cli.app:main"
 finetune = "finetune.cli.app:main"
 
+[project.urls]
+Homepage = "https://github.com/atyronesmith/ft"
+Repository = "https://github.com/atyronesmith/ft"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3,<10.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0,<4.0",
+    "hypothesis>=6.92.0,<7.0",
+    "ruff>=0.1.0",
+    "black>=24.3.0,<25.0",
+    "mypy>=1.7.0,<2.0",
+    "pre-commit>=3.6.0",
+    "ipykernel>=6.27.0,<7.0",
+    "notebook>=7.0.0,<8.0",
+]
+docs = [
+    "mkdocs>=1.5.0,<2.0",
+    "mkdocs-material>=9.5.0,<10.0",
+    "mkdocstrings[python]>=0.24.0",
+    "pdoc>=14.1.0",
+]
+
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finetune"]
+
+[tool.uv]
+default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 100

@@ -9,8 +9,8 @@ YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m # No Color
 
-# Check if poetry is installed
-POETRY := $(shell command -v poetry 2> /dev/null)
+# Check if uv is installed
+UV := $(shell command -v uv 2> /dev/null)
 
 help: ## Show this help message
 	@echo "$(BLUE)FineTune Development Commands$(NC)"
@@ -19,7 +19,7 @@ help: ## Show this help message
 	@echo "$(BLUE)📋 Common:$(NC) make test-week2 | make test-lora | make test-e2e-quick | make format"
 	@echo ""
 	@echo "$(YELLOW)📦 Environment & Setup$(NC)"
-	@grep -E '^(poetry-check|install|dev|install-all|update|lock|shell|init|create-dirs):.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^(uv-check|install|dev|install-all|update|lock|init|create-dirs):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)🧪 Testing$(NC)"
@@ -50,45 +50,39 @@ help: ## Show this help message
 	@grep -E '^(help):.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 
-poetry-check: ## Check if Poetry is installed
-ifndef POETRY
-	@echo "$(RED)Poetry is not installed. Installing Poetry...$(NC)"
-	@curl -sSL https://install.python-poetry.org | python3 -
-	@echo "$(YELLOW)Please add Poetry to your PATH and run make again$(NC)"
+uv-check: ## Check if uv is installed
+ifndef UV
+	@echo "$(RED)uv is not installed. Install with: brew install uv  (or: curl -LsSf https://astral.sh/uv/install.sh | sh)$(NC)"
 	@exit 1
 else
-	@echo "$(GREEN)Poetry is installed at: $(POETRY)$(NC)"
+	@echo "$(GREEN)uv is installed at: $(UV)$(NC)"
 endif
 
-install: poetry-check ## Install the package in production mode
-	@echo "$(BLUE)Installing FineTune with Poetry...$(NC)"
-	poetry install --without dev,docs
+install: uv-check ## Install the package in production mode
+	@echo "$(BLUE)Installing FineTune with uv...$(NC)"
+	uv sync --no-dev
 	@echo "$(GREEN)Installation complete!$(NC)"
 
-dev: poetry-check ## Install the package in development mode with all dependencies
-	@echo "$(BLUE)Setting up development environment with Poetry...$(NC)"
-	poetry install --with dev,docs
-	poetry run pre-commit install
+dev: uv-check ## Install the package in development mode with all dependencies
+	@echo "$(BLUE)Setting up development environment with uv...$(NC)"
+	uv sync --all-groups
+	uv run pre-commit install
 	@echo "$(GREEN)Development setup complete!$(NC)"
 
-install-all: poetry-check ## Install with all optional dependencies
+install-all: uv-check ## Install with all optional dependencies
 	@echo "$(BLUE)Installing all dependencies...$(NC)"
-	poetry install --with dev,docs --all-extras
+	uv sync --all-groups --all-extras
 	@echo "$(GREEN)Full installation complete!$(NC)"
 
-update: poetry-check ## Update all dependencies
+update: uv-check ## Update all dependencies
 	@echo "$(BLUE)Updating dependencies...$(NC)"
-	poetry update
+	uv lock --upgrade && uv sync --all-groups
 	@echo "$(GREEN)Dependencies updated!$(NC)"
 
-lock: poetry-check ## Update poetry.lock file
+lock: uv-check ## Refresh uv.lock without upgrading
 	@echo "$(BLUE)Updating lock file...$(NC)"
-	poetry lock --no-update
+	uv lock
 	@echo "$(GREEN)Lock file updated!$(NC)"
-
-shell: poetry-check ## Enter Poetry shell
-	@echo "$(BLUE)Entering Poetry shell...$(NC)"
-	poetry shell
 
 test: ## Run all tests with coverage
 	@echo "$(BLUE)Running tests...$(NC)"
@@ -241,21 +235,21 @@ clean: ## Clean build artifacts and cache files
 	rm -rf build/ dist/ htmlcov/
 	@echo "$(GREEN)Clean complete!$(NC)"
 
-run-api: poetry-check ## Run the FastAPI server with hot reload
+run-api: uv-check ## Run the FastAPI server with hot reload
 	@echo "$(BLUE)Starting API server...$(NC)"
-	poetry run uvicorn finetune.api.app:app --reload --port 8000 --host 0.0.0.0
+	uv run uvicorn finetune.api.app:app --reload --port 8000 --host 0.0.0.0
 
-run-ui: poetry-check ## Run the Streamlit UI
+run-ui: uv-check ## Run the Streamlit UI
 	@echo "$(BLUE)Starting Streamlit UI...$(NC)"
-	poetry run streamlit run src/finetune/ui/app.py --server.port 8501
+	uv run streamlit run src/finetune/ui/app.py --server.port 8501
 
-run-cli: poetry-check ## Run CLI in interactive mode
+run-cli: uv-check ## Run CLI in interactive mode
 	@echo "$(BLUE)Starting FineTune CLI...$(NC)"
-	poetry run ft
+	uv run ft
 
-info: poetry-check ## Show system and backend info
+info: uv-check ## Show system and backend info
 	@echo "$(BLUE)System Information...$(NC)"
-	poetry run ft info
+	uv run ft info
 
 docker-build: ## Build Docker image
 	@echo "$(BLUE)Building Docker image...$(NC)"

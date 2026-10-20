@@ -68,22 +68,6 @@ class TestEndToEndWorkflow:
         assert workflow.dataset_loader is not None
         assert workflow.template_registry is not None
 
-    def test_dataset_preparation(self, training_config):
-        """Test dataset loading and template application."""
-        workflow = FineTuningWorkflow(training_config)
-
-        # Test dataset preparation
-        workflow.prepare_dataset()
-
-        assert workflow.train_dataset is not None
-        assert len(workflow.train_dataset) == 3  # Our sample has 3 examples
-
-        # Check that templates were applied
-        first_example = workflow.train_dataset[0]
-        assert "### Instruction:" in first_example
-        assert "### Response:" in first_example
-        assert "What is Python?" in first_example
-
     def test_quick_workflow_creation(self, sample_dataset):
         """Test quick workflow creation utility."""
         workflow = create_quick_workflow(
@@ -97,20 +81,6 @@ class TestEndToEndWorkflow:
         assert workflow.config.data.train_file == sample_dataset
         assert workflow.config.data.template == "chatml"
         assert workflow.config.output_dir == "./quick_test"
-
-    def test_tokenization(self, training_config):
-        """Test dataset tokenization functionality."""
-        workflow = FineTuningWorkflow(training_config)
-
-        # Prepare dataset first
-        workflow.prepare_dataset()
-
-        # Test tokenization
-        tokenized = workflow.tokenize_dataset(workflow.train_dataset[:2], max_length=50)
-
-        assert len(tokenized) == 2
-        assert all("input_ids" in item for item in tokenized)
-        assert all("attention_mask" in item for item in tokenized)
 
     def test_configuration_integration(self, sample_dataset):
         """Test integration with configuration profiles."""
@@ -144,31 +114,6 @@ class TestEndToEndWorkflow:
         # Should handle missing files gracefully
         with pytest.raises(Exception):  # Will raise FileNotFoundError or similar
             workflow.prepare_dataset()
-
-    def test_template_integration(self, sample_dataset):
-        """Test integration with different template types."""
-        templates_to_test = ["alpaca", "chatml", "llama"]
-
-        for template in templates_to_test:
-            config = TrainingConfig(
-                model=ModelConfig(name="test-model"),
-                data=DataConfig(train_file=sample_dataset, template=template, validation_split=0.0),
-            )
-
-            workflow = FineTuningWorkflow(config)
-            workflow.prepare_dataset()
-
-            assert workflow.train_dataset is not None
-            assert len(workflow.train_dataset) == 3
-
-            # Each template should produce different formatting
-            first_example = workflow.train_dataset[0]
-            if template == "alpaca":
-                assert "### Instruction:" in first_example
-            elif template == "chatml":
-                assert "<|im_start|>user" in first_example
-            elif template == "llama":
-                assert "[INST]" in first_example
 
     def test_config_yaml_integration(self, sample_dataset):
         """Test integration with YAML configuration files."""

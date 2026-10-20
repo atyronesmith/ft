@@ -2,6 +2,7 @@
 Unit tests for CLI commands.
 """
 
+import contextlib
 import json
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -49,7 +50,7 @@ class TestCLIApp:
 
     def test_init_command(self, runner, temp_dir):
         """Test init command."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             result = runner.invoke(app, ["init"])
             assert result.exit_code == 0
             assert "Project initialized successfully" in result.stdout
@@ -87,7 +88,7 @@ class TestTrainCommands:
         mock_workflow.run_training.return_value = {"loss": 0.5, "perplexity": 1.6}
         mock_workflow_class.return_value = mock_workflow
 
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create dummy dataset
             dataset_path = Path("data.json")
             dataset_path.write_text(json.dumps([{"instruction": "test", "output": "response"}]))
@@ -169,7 +170,7 @@ class TestDatasetCommands:
 
     def test_dataset_validate(self, runner, temp_dir):
         """Test dataset validate command."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create valid dataset
             dataset_path = Path("valid.json")
             dataset_path.write_text(
@@ -187,7 +188,7 @@ class TestDatasetCommands:
 
     def test_dataset_validate_invalid(self, runner, temp_dir):
         """Test dataset validate with invalid data."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create invalid dataset
             dataset_path = Path("invalid.json")
             dataset_path.write_text("not json")
@@ -198,7 +199,7 @@ class TestDatasetCommands:
 
     def test_dataset_split(self, runner, temp_dir):
         """Test dataset split command."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create dataset
             dataset_path = Path("data.json")
             dataset_path.write_text(json.dumps([{"text": f"Example {i}"} for i in range(10)]))
@@ -226,7 +227,7 @@ class TestDatasetCommands:
 
     def test_dataset_stats(self, runner, temp_dir):
         """Test dataset stats command."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create dataset
             dataset_path = Path("data.json")
             dataset_path.write_text(
@@ -246,7 +247,7 @@ class TestDatasetCommands:
 
     def test_dataset_prepare(self, runner, temp_dir):
         """Test dataset prepare command."""
-        with runner.isolated_filesystem(temp_dir=temp_dir):
+        with contextlib.chdir(temp_dir):
             # Create dataset with instruction/output format
             dataset_path = Path("raw.json")
             dataset_path.write_text(

@@ -128,7 +128,7 @@ class TestMLXModelLoading:
         input_ids = mx.random.randint(0, config.vocab_size, (batch_size, seq_len))
 
         # Forward pass
-        logits = model.forward(input_ids)
+        logits, _cache = model.forward(input_ids)
 
         assert logits.shape == (batch_size, seq_len, config.vocab_size)
 

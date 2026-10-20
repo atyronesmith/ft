@@ -260,11 +260,10 @@ pip install -e ".[dev]"  # Includes testing and linting tools
 
 ### Python Version
 - **Minimum**: Python 3.11
-- **Recommended**: Python 3.12
-- **Package Manager**: pip or poetry
+- **Recommended**: Python 3.11 (what `uv.lock` is resolved for)
+- **Package Manager**: uv
 
 ### Dependency Resolution
-- **poetry** (1.7+): Modern dependency management
-- **pip-tools** (7.3+): Alternative for requirements.txt
+- **uv**: declares dependencies in PEP 621 `[project]`, locks to `uv.lock`, manages `.venv`. Migrated from Poetry 2026-10-20 so Dependabot alerts land on the lockfile and can be fixed mechanically.
 
 This comprehensive stack ensures optimal performance on Apple Silicon while maintaining flexibility for various model architectures and training scenarios.
